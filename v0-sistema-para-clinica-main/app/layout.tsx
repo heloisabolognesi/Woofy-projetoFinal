@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { DM_Sans, Fraunces } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import { AppProvider } from "@/context/app-context"
+import { AuthProvider } from "@/context/auth-context"
 import { ToastContainer } from "@/components/toast-container"
 import { ThemeProvider } from "@/components/theme-provider"
 import "./globals.css"
@@ -48,8 +49,10 @@ export default function RootLayout({
       <body className={`${dmSans.variable} ${fraunces.variable} font-sans antialiased`}>
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
           <AppProvider>
-            {children}
-            <ToastContainer />
+            <AuthProvider>
+              {children}
+              <ToastContainer />
+            </AuthProvider>
           </AppProvider>
         </ThemeProvider>
         {process.env.NODE_ENV === "production" && <Analytics />}
