@@ -1,59 +1,104 @@
 "use client"
 
-import { useState } from "react"
-import { useApp } from "@/context/app-context"
-import {
-  ClipboardList,
-  Search,
-  Stethoscope,
-  Syringe,
-  FileText,
-  ChevronRight,
-  ArrowLeft,
-} from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+import { useRouter } from "next/navigation"
+import { ArrowLeft, ChevronRight, ClipboardList, FileText, Loader2, Search, Stethoscope, Syringe } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { createClient } from "@/lib/supabase"
+import { useAuth } from "@/context/auth-context"
+import { getAdminHistoryEntries, type AdminHistoryEntry, type HistoricoTipo } from "@/lib/clinic-data"
 
-const tipoIcons = {
+const tipoIcons: Record<HistoricoTipo, typeof Stethoscope> = {
   consulta: Stethoscope,
   vacina: Syringe,
   exame: FileText,
 }
 
-const tipoColors = {
+const tipoColors: Record<HistoricoTipo, string> = {
   consulta: "bg-secondary",
   vacina: "bg-woofy-gold",
   exame: "bg-woofy-accent",
 }
 
-const tipoLabels = {
+const tipoLabels: Record<HistoricoTipo, string> = {
   consulta: "Consulta",
   vacina: "Vacina",
   exame: "Exame",
 }
 
 export default function HistoricoPage() {
-  const { pets, historico } = useApp()
+  const { user, loading, refreshProfile } = useAuth()
+  const router = useRouter()
+  const supabase = useMemo(() => createClient(), [])
+  const [historico, setHistorico] = useState<AdminHistoryEntry[]>([])
   const [selectedPetId, setSelectedPetId] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
+  const [isLoadingData, setIsLoadingData] = useState(true)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
-  const filteredPets = pets.filter(
-    (pet) =>
-      !pet.arquivado &&
-      pet.nome.toLowerCase().includes(searchTerm.toLowerCase())
-  )
+  useEffect(() => {
+    async function loadHistory() {
+      if (loading) return
+      if (!user) {
+        router.replace("/login?redirect=/historico")
+        return
+      }
 
-  const selectedPet = pets.find((p) => p.id === selectedPetId)
+      setIsLoadingData(true)
+      setErrorMessage(null)
+      await refreshProfile(user.id)
+
+      try {
+        setHistorico(await getAdminHistoryEntries(supabase))
+      } catch {
+        setErrorMessage("Nao foi possivel carregar o historico real do Supabase.")
+      } finally {
+        setIsLoadingData(false)
+      }
+    }
+
+    loadHistory()
+  }, [loading, refreshProfile, router, supabase, user])
+
+  const pets = useMemo(() => {
+    const byId = new Map<string, { id: string; nome: string; tutor: string; registros: number }>()
+    historico.forEach((entry) => {
+      const current = byId.get(entry.petId)
+      byId.set(entry.petId, {
+        id: entry.petId,
+        nome: entry.petNome,
+        tutor: entry.tutorDisplayName,
+        registros: (current?.registros || 0) + 1,
+      })
+    })
+    return [...byId.values()].sort((a, b) => a.nome.localeCompare(b.nome))
+  }, [historico])
+
+  const filteredPets = pets.filter((pet) => {
+    const normalizedSearch = searchTerm.toLowerCase()
+    return pet.nome.toLowerCase().includes(normalizedSearch) || pet.tutor.toLowerCase().includes(normalizedSearch)
+  })
+
+  const selectedPet = pets.find((pet) => pet.id === selectedPetId)
   const petHistorico = historico
-    .filter((h) => h.petId === selectedPetId)
+    .filter((entry) => entry.petId === selectedPetId)
     .sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime())
 
   const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr + "T00:00:00")
+    const date = new Date(`${dateStr}T00:00:00`)
     return date.toLocaleDateString("pt-BR", {
       day: "2-digit",
       month: "short",
       year: "numeric",
     })
+  }
+
+  if (loading || isLoadingData) {
+    return (
+      <div className="flex min-h-[360px] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    )
   }
 
   if (selectedPetId && selectedPet) {
@@ -70,61 +115,49 @@ export default function HistoricoPage() {
         </div>
 
         <div className="bg-card rounded-xl p-6 border border-border">
-          <h1 className="text-2xl font-bold text-card-foreground font-serif">
-            Historico de {selectedPet.nome}
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            {selectedPet.raca} - Tutor: {selectedPet.tutor}
-          </p>
+          <h1 className="text-2xl font-bold text-card-foreground font-serif">Historico de {selectedPet.nome}</h1>
+          <p className="text-muted-foreground mt-1">Tutor: {selectedPet.tutor}</p>
         </div>
 
         {petHistorico.length > 0 ? (
           <div className="relative">
-            {/* Timeline line */}
             <div className="absolute left-6 top-0 bottom-0 w-0.5 bg-border" />
-
             <div className="space-y-6">
-              {petHistorico.map((item, index) => {
+              {petHistorico.map((item) => {
                 const Icon = tipoIcons[item.tipo]
                 return (
                   <div key={item.id} className="relative flex gap-4">
-                    {/* Timeline dot */}
                     <div
                       className={cn(
                         "relative z-10 h-12 w-12 rounded-full flex items-center justify-center flex-shrink-0",
-                        tipoColors[item.tipo]
+                        tipoColors[item.tipo],
                       )}
                     >
                       <Icon className="h-5 w-5 text-primary-foreground" />
                     </div>
 
-                    {/* Content */}
                     <div className="flex-1 bg-card rounded-xl p-4 border border-border">
                       <div className="flex items-start justify-between gap-4">
                         <div>
                           <span
                             className={cn(
                               "inline-block px-2 py-0.5 rounded text-xs font-medium mb-2",
-                              item.tipo === "consulta" &&
-                                "bg-secondary/20 text-secondary",
-                              item.tipo === "vacina" &&
-                                "bg-woofy-gold/20 text-woofy-gold",
-                              item.tipo === "exame" &&
-                                "bg-woofy-accent/20 text-primary"
+                              item.tipo === "consulta" && "bg-secondary/20 text-secondary",
+                              item.tipo === "vacina" && "bg-woofy-gold/20 text-woofy-gold",
+                              item.tipo === "exame" && "bg-woofy-accent/20 text-primary",
                             )}
                           >
                             {tipoLabels[item.tipo]}
                           </span>
-                          <p className="text-card-foreground font-medium">
-                            {item.descricao}
-                          </p>
+                          <p className="text-card-foreground font-medium">{item.descricao}</p>
+                          {item.consultationReason && (
+                            <p className="text-sm text-muted-foreground mt-1">Consulta: {item.consultationReason}</p>
+                          )}
                           <p className="text-sm text-muted-foreground mt-1">
-                            {item.veterinario}
+                            Veterinario: {item.veterinarianDisplayName}
                           </p>
                         </div>
-                        <span className="text-sm text-muted-foreground whitespace-nowrap">
-                          {formatDate(item.data)}
-                        </span>
+                        <span className="text-sm text-muted-foreground whitespace-nowrap">{formatDate(item.data)}</span>
                       </div>
                     </div>
                   </div>
@@ -133,15 +166,7 @@ export default function HistoricoPage() {
             </div>
           </div>
         ) : (
-          <div className="text-center py-16 bg-card rounded-xl border border-border">
-            <ClipboardList className="h-16 w-16 mx-auto text-muted-foreground/50 mb-4" />
-            <h3 className="text-lg font-medium text-card-foreground">
-              Nenhum registro encontrado
-            </h3>
-            <p className="text-muted-foreground mt-1">
-              Este pet ainda nao possui historico medico
-            </p>
-          </div>
+          <EmptyState text="Este pet ainda nao possui historico medico." />
         )}
       </div>
     )
@@ -150,64 +175,64 @@ export default function HistoricoPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-foreground font-serif">
-          Historico Medico
-        </h1>
+        <h1 className="text-3xl font-bold text-foreground font-serif">Historico Medico</h1>
         <p className="text-muted-foreground mt-1">
-          Selecione um pet para ver o historico completo
+          Registros clinicos gerados por consultas, vacinas e exames
         </p>
+        {errorMessage && <p className="mt-2 text-sm text-destructive">{errorMessage}</p>}
       </div>
 
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
         <input
           type="text"
-          placeholder="Buscar por nome do pet..."
+          placeholder="Buscar por pet ou tutor..."
           value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
+          onChange={(event) => setSearchTerm(event.target.value)}
           className="w-full pl-10 pr-4 py-2 border border-input rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
         />
       </div>
 
       {filteredPets.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredPets.map((pet) => {
-            const petRecords = historico.filter((h) => h.petId === pet.id).length
-            return (
-              <button
-                key={pet.id}
-                onClick={() => setSelectedPetId(pet.id)}
-                className="bg-card rounded-xl p-5 border border-border hover:shadow-md transition-all text-left group"
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="font-semibold text-card-foreground text-lg">
-                      {pet.nome}
-                    </h3>
-                    <p className="text-sm text-muted-foreground">{pet.raca}</p>
-                    <p className="text-sm text-muted-foreground mt-2">
-                      {petRecords} registro{petRecords !== 1 ? "s" : ""}
-                    </p>
-                  </div>
-                  <ChevronRight className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
+          {filteredPets.map((pet) => (
+            <button
+              key={pet.id}
+              onClick={() => setSelectedPetId(pet.id)}
+              className="bg-card rounded-xl p-5 border border-border hover:shadow-md transition-all text-left group"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-semibold text-card-foreground text-lg">{pet.nome}</h3>
+                  <p className="text-sm text-muted-foreground">Tutor: {pet.tutor}</p>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    {pet.registros} registro{pet.registros !== 1 ? "s" : ""}
+                  </p>
                 </div>
-              </button>
-            )
-          })}
+                <ChevronRight className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
+              </div>
+            </button>
+          ))}
         </div>
       ) : (
-        <div className="text-center py-16 bg-card rounded-xl border border-border">
-          <ClipboardList className="h-16 w-16 mx-auto text-muted-foreground/50 mb-4" />
-          <h3 className="text-lg font-medium text-card-foreground">
-            Nenhum pet encontrado
-          </h3>
-          <p className="text-muted-foreground mt-1">
-            {searchTerm
-              ? "Tente buscar por outro nome"
-              : "Cadastre pets para ver o historico"}
-          </p>
-        </div>
+        <EmptyState
+          text={
+            searchTerm
+              ? "Tente buscar por outro pet ou tutor."
+              : "Nenhum historico clinico real foi registrado ainda."
+          }
+        />
       )}
+    </div>
+  )
+}
+
+function EmptyState({ text }: { text: string }) {
+  return (
+    <div className="text-center py-16 bg-card rounded-xl border border-border">
+      <ClipboardList className="h-16 w-16 mx-auto text-muted-foreground/50 mb-4" />
+      <h3 className="text-lg font-medium text-card-foreground">Nenhum registro encontrado</h3>
+      <p className="text-muted-foreground mt-1">{text}</p>
     </div>
   )
 }

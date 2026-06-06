@@ -10,33 +10,12 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { useAuth } from "@/context/auth-context"
 import { createClient } from "@/lib/supabase"
-
-interface AgendamentoRow {
-  id: string
-  pet_id: string
-  user_id: string
-  tutor: string
-  data: string
-  horario_inicio: string
-  horario_fim: string
-  veterinario: string
-  tipo: string
-  status?: string | null
-}
-
-interface PetRow {
-  id: string
-  nome: string
-  especie: "cao" | "gato" | "outro"
-  raca: string
-}
-
-interface TutorProfileRow {
-  id: string
-  full_name: string | null
-}
-
-type HistoricoTipo = "consulta" | "vacina" | "exame"
+import {
+  createConsultationWithHistory,
+  getVeterinarianAppointments,
+  type ClinicAppointment,
+  type HistoricoTipo,
+} from "@/lib/clinic-data"
 
 const today = new Date().toISOString().split("T")[0]
 
@@ -44,9 +23,7 @@ export default function VeterinarioPage() {
   const { user, profile, loading, refreshProfile, signOut } = useAuth()
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
-  const [agendamentos, setAgendamentos] = useState<AgendamentoRow[]>([])
-  const [petById, setPetById] = useState<Record<string, PetRow>>({})
-  const [tutorById, setTutorById] = useState<Record<string, TutorProfileRow>>({})
+  const [agendamentos, setAgendamentos] = useState<ClinicAppointment[]>([])
   const [selectedAppointmentId, setSelectedAppointmentId] = useState("")
   const [feedback, setFeedback] = useState("")
   const [historyDescription, setHistoryDescription] = useState("")
@@ -74,50 +51,14 @@ export default function VeterinarioPage() {
       setErrorMessage(null)
       await refreshProfile(user.id)
 
-      const agendamentosResult = await supabase
-        .from("agendamentos")
-        .select("*")
-        .gte("data", today)
-        .order("data", { ascending: true })
-        .order("horario_inicio", { ascending: true })
-
-      if (agendamentosResult.error) {
+      try {
+        const appointments = await getVeterinarianAppointments(supabase, user.id)
+        setAgendamentos(appointments)
+        setSelectedAppointmentId((current) => current || appointments[0]?.id || "")
+      } catch {
         setErrorMessage("Nao foi possivel carregar os agendamentos.")
-        setIsLoadingData(false)
-        return
       }
 
-      const appointments = (agendamentosResult.data || []) as AgendamentoRow[]
-      setAgendamentos(appointments)
-      setSelectedAppointmentId((current) => current || appointments[0]?.id || "")
-
-      const petIds = [...new Set(appointments.map((appointment) => appointment.pet_id))]
-      const tutorIds = [...new Set(appointments.map((appointment) => appointment.user_id))]
-
-      const [petsResult, tutorsResult] = await Promise.all([
-        petIds.length > 0
-          ? supabase.from("pets").select("id,nome,especie,raca").in("id", petIds)
-          : Promise.resolve({ data: [], error: null }),
-        tutorIds.length > 0
-          ? supabase.from("profiles").select("id,full_name").in("id", tutorIds)
-          : Promise.resolve({ data: [], error: null }),
-      ])
-
-      if (petsResult.error || tutorsResult.error) {
-        setErrorMessage("Alguns dados de pet ou tutor nao puderam ser carregados.")
-      }
-
-      const pets = (petsResult.data || []) as PetRow[]
-      const tutors = (tutorsResult.data || []) as TutorProfileRow[]
-
-      setPetById(pets.reduce<Record<string, PetRow>>((acc, pet) => {
-        acc[pet.id] = pet
-        return acc
-      }, {}))
-      setTutorById(tutors.reduce<Record<string, TutorProfileRow>>((acc, tutor) => {
-        acc[tutor.id] = tutor
-        return acc
-      }, {}))
       setIsLoadingData(false)
     }
 
@@ -131,51 +72,29 @@ export default function VeterinarioPage() {
 
   async function handleSaveClinicalRecord(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!selectedAppointment || !feedback.trim()) {
+    if (!user || !selectedAppointment || !feedback.trim()) {
       setErrorMessage("Selecione um agendamento e escreva o feedback da consulta.")
       return
     }
 
-    const pet = petById[selectedAppointment.pet_id]
     const description = historyDescription.trim() || feedback.trim()
     setIsSaving(true)
     setMessage(null)
     setErrorMessage(null)
 
-    const consultaResult = await supabase
-      .from("consultas")
-      .insert({
-        pet_id: selectedAppointment.pet_id,
-        user_id: selectedAppointment.user_id,
-        tutor: tutorById[selectedAppointment.user_id]?.full_name || selectedAppointment.tutor,
-        data: historyDate,
-        horario: selectedAppointment.horario_inicio,
-        veterinario: veterinarianName,
-        motivo: feedback.trim(),
-        status: "realizada",
+    try {
+      await createConsultationWithHistory(supabase, {
+        appointment: selectedAppointment,
+        veterinarianId: user.id,
+        veterinarianName,
+        feedback: feedback.trim(),
+        historyDescription: description,
+        historyType,
+        historyDate,
       })
-      .select("id")
-      .single()
-
-    if (consultaResult.error) {
+    } catch {
       setIsSaving(false)
-      setErrorMessage("Nao foi possivel registrar a consulta. Verifique se a migration de permissoes foi aplicada.")
-      return
-    }
-
-    const historicoResult = await supabase.from("historico").insert({
-      pet_id: selectedAppointment.pet_id,
-      user_id: selectedAppointment.user_id,
-      data: historyDate,
-      tipo: historyType,
-      descricao: description,
-      veterinario: veterinarianName,
-    })
-
-    setIsSaving(false)
-
-    if (historicoResult.error) {
-      setErrorMessage("Consulta registrada, mas o historico clinico nao foi salvo.")
+      setErrorMessage("Nao foi possivel registrar a consulta e o historico. Verifique se a migration de permissoes foi aplicada.")
       return
     }
 
@@ -183,7 +102,13 @@ export default function VeterinarioPage() {
     setHistoryDescription("")
     setHistoryType("consulta")
     setHistoryDate(today)
-    setMessage(`Feedback registrado para ${pet?.nome || "o pet selecionado"}.`)
+    setAgendamentos((current) => {
+      const remaining = current.filter((appointment) => appointment.id !== selectedAppointment.id)
+      setSelectedAppointmentId(remaining[0]?.id || "")
+      return remaining
+    })
+    setIsSaving(false)
+    setMessage(`Feedback registrado para ${selectedAppointment.petNome}.`)
   }
 
   if (loading || isLoadingData) {
@@ -232,8 +157,6 @@ export default function VeterinarioPage() {
             {agendamentos.length > 0 ? (
               <div className="space-y-3">
                 {agendamentos.map((appointment) => {
-                  const pet = petById[appointment.pet_id]
-                  const tutor = tutorById[appointment.user_id]
                   const isSelected = appointment.id === selectedAppointmentId
 
                   return (
@@ -247,20 +170,20 @@ export default function VeterinarioPage() {
                     >
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
-                          <p className="font-semibold text-foreground">{pet?.nome || "Pet nao identificado"}</p>
+                          <p className="font-semibold text-foreground">{appointment.petNome}</p>
                           <p className="text-sm text-muted-foreground">
-                            Tutor: {tutor?.full_name || appointment.tutor}
+                            Tutor: {appointment.tutorDisplayName}
                           </p>
                           <p className="text-sm text-muted-foreground">
-                            {pet ? `${pet.raca} - ${pet.especie}` : "Dados do pet indisponiveis"}
+                            Veterinario: {appointment.veterinarianDisplayName}
                           </p>
                         </div>
                         <div className="text-left sm:text-right">
                           <p className="text-sm font-medium text-foreground">
-                            {appointment.data} as {appointment.horario_inicio}
+                            {appointment.data} as {appointment.horarioInicio}
                           </p>
                           <p className="text-sm text-muted-foreground">{appointment.tipo}</p>
-                          <p className="text-xs uppercase text-muted-foreground">{appointment.status || "agendado"}</p>
+                          <p className="text-xs uppercase text-muted-foreground">{appointment.status}</p>
                         </div>
                       </div>
                     </button>
@@ -286,7 +209,7 @@ export default function VeterinarioPage() {
                   <option value="">Selecione</option>
                   {agendamentos.map((appointment) => (
                     <option key={appointment.id} value={appointment.id}>
-                      {petById[appointment.pet_id]?.nome || "Pet"} - {appointment.data} {appointment.horario_inicio}
+                      {appointment.petNome} - {appointment.data} {appointment.horarioInicio}
                     </option>
                   ))}
                 </select>

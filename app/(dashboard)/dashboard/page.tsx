@@ -177,9 +177,8 @@ export default function DashboardPage() {
     loadDashboardData()
   }, [loading, refreshProfile, router, supabase, user])
 
-  const consultasHoje = data.consultas.filter(
-    (c) => c.data === today && c.status === "agendada"
-  ).length
+  // consultas = registros clinicos; agendamentos = horarios marcados na agenda.
+  const consultasHoje = data.consultas.filter((c) => c.data === today).length
 
   const vacinasPendentes = data.vacinas.filter((v) => {
     if (!v.proxima_dose) return false

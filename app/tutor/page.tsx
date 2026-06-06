@@ -19,6 +19,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { useAuth } from "@/context/auth-context"
 import { useApp } from "@/context/app-context"
 import { createClient } from "@/lib/supabase"
+import { createTutorAppointment } from "@/lib/clinic-data"
 
 type Especie = "cao" | "gato" | "outro"
 
@@ -192,33 +193,41 @@ export default function TutorPage() {
     }
 
     setIsSavingAppointment(true)
-    const { data, error } = await supabase
-      .from("agendamentos")
-      .insert({
-        pet_id: selectedPet.id,
-        user_id: user.id,
+    try {
+      const data = await createTutorAppointment(supabase, {
+        petId: selectedPet.id,
+        userId: user.id,
         tutor: tutorName,
         data: appointmentForm.data,
-        horario_inicio: appointmentForm.horario_inicio,
-        horario_fim: addOneHour(appointmentForm.horario_inicio),
+        horarioInicio: appointmentForm.horario_inicio,
+        horarioFim: addOneHour(appointmentForm.horario_inicio),
         veterinario: appointmentForm.veterinario,
         tipo: appointmentForm.observacoes
           ? `${appointmentForm.tipo} - ${appointmentForm.observacoes.trim()}`
           : appointmentForm.tipo,
       })
-      .select()
-      .single()
 
-    setIsSavingAppointment(false)
-
-    if (error) {
+      setAgendamentos((current) => [
+        ...current,
+        {
+          id: data.id,
+          pet_id: data.petId,
+          user_id: data.userId,
+          tutor: data.tutor,
+          data: data.data,
+          horario_inicio: data.horarioInicio,
+          horario_fim: data.horarioFim,
+          veterinario: data.veterinario,
+          tipo: data.tipo,
+        },
+      ])
+      setAppointmentForm(initialAppointmentForm)
+      addToast("Agendamento solicitado com sucesso!")
+    } catch {
       addToast("Erro ao criar agendamento.", "error")
-      return
+    } finally {
+      setIsSavingAppointment(false)
     }
-
-    setAgendamentos((current) => [...current, data as AgendamentoRow])
-    setAppointmentForm(initialAppointmentForm)
-    addToast("Agendamento solicitado com sucesso!")
   }
 
   if (loading || isLoadingData) {
