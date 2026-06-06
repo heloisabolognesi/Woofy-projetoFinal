@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react"
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
 import { createClient } from "@/lib/supabase"
 import { defaultRole, type UserRole } from "@/lib/auth-routes"
 import type { User, AuthError } from "@supabase/supabase-js"
@@ -30,10 +30,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
 
   // Fetch user profile from the profiles table
-  const fetchProfile = async (userId: string): Promise<Profile | null> => {
+  const fetchProfile = useCallback(async (userId: string): Promise<Profile | null> => {
     const { data, error } = await supabase
       .from("profiles")
       .select("*")
@@ -47,13 +47,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     return null
-  }
+  }, [supabase])
 
-  const refreshProfile = async (userId?: string) => {
+  const refreshProfile = useCallback(async (userId?: string) => {
     const profileUserId = userId ?? user?.id
     if (!profileUserId) return null
     return fetchProfile(profileUserId)
-  }
+  }, [fetchProfile, user?.id])
 
   useEffect(() => {
     // Get initial session
@@ -85,8 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
 
     return () => subscription.unsubscribe()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [fetchProfile, supabase])
 
   const signIn = async (email: string, password: string) => {
     const { data, error } = await supabase.auth.signInWithPassword({

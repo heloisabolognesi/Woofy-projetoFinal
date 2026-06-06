@@ -1,8 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
+import { useRouter } from "next/navigation"
 import { useApp } from "@/context/app-context"
-import { type Pet } from "@/lib/mock-data"
+import { useAuth } from "@/context/auth-context"
 import {
   PawPrint,
   Plus,
@@ -14,8 +15,20 @@ import {
   Cat,
   Rabbit,
   Phone,
+  Loader2,
 } from "lucide-react"
-import { cn } from "@/lib/utils"
+import {
+  archiveAdminPet,
+  createAdminPet,
+  getAdminPets,
+  getClinicProfiles,
+  updateAdminPet,
+  type AdminPet,
+  type Especie,
+  type ProfileSummary,
+  type SaveAdminPetInput,
+} from "@/lib/clinic-data"
+import { createClient } from "@/lib/supabase"
 
 const especieIcons = {
   cao: Dog,
@@ -29,13 +42,28 @@ const especieLabels = {
   outro: "Outro",
 }
 
+function calculateAge(dataNascimento: string | null) {
+  if (!dataNascimento) return "Idade nao informada"
+
+  const birthDate = new Date(dataNascimento + "T00:00:00")
+  const today = new Date()
+  let age = today.getFullYear() - birthDate.getFullYear()
+  const monthDiff = today.getMonth() - birthDate.getMonth()
+
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    age -= 1
+  }
+
+  return age <= 0 ? "Menos de 1 ano" : `${age} ${age === 1 ? "ano" : "anos"}`
+}
+
 function PetCard({
   pet,
   onEdit,
   onArchive,
 }: {
-  pet: Pet
-  onEdit: (pet: Pet) => void
+  pet: AdminPet
+  onEdit: (pet: AdminPet) => void
   onArchive: (id: string) => void
 }) {
   const Icon = especieIcons[pet.especie]
@@ -53,15 +81,20 @@ function PetCard({
           <p className="text-sm text-muted-foreground">
             {pet.raca} - {especieLabels[pet.especie]}
           </p>
-          <p className="text-sm text-muted-foreground mt-1">Peso: {pet.peso} kg</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            {pet.peso ? `Peso: ${pet.peso} kg` : "Peso nao informado"}
+          </p>
+          <p className="text-sm text-muted-foreground mt-1">{calculateAge(pet.dataNascimento)}</p>
         </div>
       </div>
 
       <div className="mt-4 pt-4 border-t border-border">
-        <p className="text-sm font-medium text-card-foreground">{pet.tutor}</p>
+        <p className="text-sm font-medium text-card-foreground">
+          {pet.tutorProfileName || pet.tutor}
+        </p>
         <div className="flex items-center gap-1 text-sm text-muted-foreground mt-1">
           <Phone className="h-3 w-3" />
-          {pet.telefoneTutor}
+          {pet.telefoneTutor || "Telefone nao informado"}
         </div>
       </div>
 
@@ -76,6 +109,7 @@ function PetCard({
         <button
           onClick={() => onArchive(pet.id)}
           className="flex items-center justify-center px-3 py-2 bg-muted text-muted-foreground rounded-lg hover:bg-muted/80 transition-colors"
+          title="Arquivar pet"
         >
           <Archive className="h-4 w-4" />
         </button>
@@ -88,28 +122,58 @@ function PetModal({
   isOpen,
   onClose,
   pet,
+  tutors,
   onSave,
 }: {
   isOpen: boolean
   onClose: () => void
-  pet: Pet | null
-  onSave: (data: Omit<Pet, "id">) => void
+  pet: AdminPet | null
+  tutors: ProfileSummary[]
+  onSave: (data: SaveAdminPetInput) => void
 }) {
-  const [formData, setFormData] = useState<Omit<Pet, "id">>({
+  const [formData, setFormData] = useState<SaveAdminPetInput>({
+    userId: pet?.userId || "",
     nome: pet?.nome || "",
     especie: pet?.especie || "cao",
     raca: pet?.raca || "",
     dataNascimento: pet?.dataNascimento || "",
-    peso: pet?.peso || 0,
+    peso: pet?.peso || null,
     tutor: pet?.tutor || "",
     telefoneTutor: pet?.telefoneTutor || "",
   })
 
+  useEffect(() => {
+    setFormData({
+      userId: pet?.userId || "",
+      nome: pet?.nome || "",
+      especie: pet?.especie || "cao",
+      raca: pet?.raca || "",
+      dataNascimento: pet?.dataNascimento || "",
+      peso: pet?.peso || null,
+      tutor: pet?.tutor || "",
+      telefoneTutor: pet?.telefoneTutor || "",
+    })
+  }, [pet, isOpen])
+
   if (!isOpen) return null
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    onSave(formData)
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault()
+    onSave({
+      ...formData,
+      dataNascimento: formData.dataNascimento || null,
+      tutor: formData.tutor.trim(),
+      telefoneTutor: formData.telefoneTutor || null,
+    })
+  }
+
+  const handleTutorChange = (userId: string) => {
+    const selectedTutor = tutors.find((tutor) => tutor.id === userId)
+    setFormData({
+      ...formData,
+      userId,
+      tutor: selectedTutor?.fullName || formData.tutor,
+    })
   }
 
   return (
@@ -129,6 +193,25 @@ function PetModal({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-card-foreground mb-1">
+              Tutor responsavel
+            </label>
+            <select
+              required
+              value={formData.userId}
+              onChange={(event) => handleTutorChange(event.target.value)}
+              className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            >
+              <option value="">Selecione um tutor</option>
+              {tutors.map((tutor) => (
+                <option key={tutor.id} value={tutor.id}>
+                  {tutor.fullName || tutor.id}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <div>
             <label className="block text-sm font-medium text-card-foreground mb-1">
               Nome do Pet
@@ -151,7 +234,7 @@ function PetModal({
               onChange={(e) =>
                 setFormData({
                   ...formData,
-                  especie: e.target.value as Pet["especie"],
+                  especie: e.target.value as Especie,
                 })
               }
               className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
@@ -182,10 +265,9 @@ function PetModal({
               </label>
               <input
                 type="date"
-                required
-                value={formData.dataNascimento}
+                value={formData.dataNascimento || ""}
                 onChange={(e) =>
-                  setFormData({ ...formData, dataNascimento: e.target.value })
+                  setFormData({ ...formData, dataNascimento: e.target.value || null })
                 }
                 className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               />
@@ -196,12 +278,11 @@ function PetModal({
               </label>
               <input
                 type="number"
-                required
                 step="0.1"
                 min="0"
-                value={formData.peso}
+                value={formData.peso ?? ""}
                 onChange={(e) =>
-                  setFormData({ ...formData, peso: parseFloat(e.target.value) })
+                  setFormData({ ...formData, peso: e.target.value ? Number(e.target.value) : null })
                 }
                 className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               />
@@ -227,8 +308,7 @@ function PetModal({
             </label>
             <input
               type="tel"
-              required
-              value={formData.telefoneTutor}
+              value={formData.telefoneTutor || ""}
               onChange={(e) =>
                 setFormData({ ...formData, telefoneTutor: e.target.value })
               }
@@ -258,23 +338,63 @@ function PetModal({
 }
 
 export default function PetsPage() {
-  const { pets, setPets, addToast } = useApp()
+  const { addToast } = useApp()
+  const { user, loading, refreshProfile } = useAuth()
+  const router = useRouter()
+  const supabase = useMemo(() => createClient(), [])
+  const [pets, setPets] = useState<AdminPet[]>([])
+  const [profiles, setProfiles] = useState<ProfileSummary[]>([])
   const [isModalOpen, setIsModalOpen] = useState(false)
-  const [editingPet, setEditingPet] = useState<Pet | null>(null)
+  const [editingPet, setEditingPet] = useState<AdminPet | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
   const [filterEspecie, setFilterEspecie] = useState<string>("todos")
+  const [isLoadingData, setIsLoadingData] = useState(true)
+
+  const tutors = useMemo(
+    () => profiles.filter((profile) => profile.role === "tutor"),
+    [profiles],
+  )
+
+  useEffect(() => {
+    async function loadData() {
+      if (loading) return
+      if (!user) {
+        router.replace("/login?redirect=/pets")
+        return
+      }
+
+      setIsLoadingData(true)
+      await refreshProfile(user.id)
+
+      try {
+        const [petsResult, profilesResult] = await Promise.all([
+          getAdminPets(supabase),
+          getClinicProfiles(supabase),
+        ])
+        setPets(petsResult)
+        setProfiles(profilesResult)
+      } catch {
+        addToast("Nao foi possivel carregar os pets reais do Supabase.", "error")
+      } finally {
+        setIsLoadingData(false)
+      }
+    }
+
+    loadData()
+  }, [addToast, loading, refreshProfile, router, supabase, user])
 
   const filteredPets = pets.filter((pet) => {
     if (pet.arquivado) return false
     const matchesSearch =
       pet.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      pet.tutor.toLowerCase().includes(searchTerm.toLowerCase())
+      pet.tutor.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (pet.tutorProfileName || "").toLowerCase().includes(searchTerm.toLowerCase())
     const matchesFilter =
       filterEspecie === "todos" || pet.especie === filterEspecie
     return matchesSearch && matchesFilter
   })
 
-  const handleOpenModal = (pet?: Pet) => {
+  const handleOpenModal = (pet?: AdminPet) => {
     setEditingPet(pet || null)
     setIsModalOpen(true)
   }
@@ -284,28 +404,43 @@ export default function PetsPage() {
     setEditingPet(null)
   }
 
-  const handleSave = (data: Omit<Pet, "id">) => {
-    if (editingPet) {
-      setPets((prev) =>
-        prev.map((p) => (p.id === editingPet.id ? { ...p, ...data } : p))
-      )
-      addToast("Pet atualizado com sucesso!")
-    } else {
-      const newPet: Pet = {
-        ...data,
-        id: Math.random().toString(36).substring(7),
+  const handleSave = async (data: SaveAdminPetInput) => {
+    try {
+      if (editingPet) {
+        const updatedPet = await updateAdminPet(supabase, editingPet.id, data)
+        setPets((prev) =>
+          prev.map((pet) => (pet.id === editingPet.id ? updatedPet : pet))
+        )
+        addToast("Pet atualizado com sucesso!")
+      } else {
+        const newPet = await createAdminPet(supabase, data)
+        setPets((prev) => [newPet, ...prev])
+        addToast("Pet cadastrado com sucesso!")
       }
-      setPets((prev) => [...prev, newPet])
-      addToast("Pet cadastrado com sucesso!")
+      handleCloseModal()
+    } catch {
+      addToast("Nao foi possivel salvar o pet.", "error")
     }
-    handleCloseModal()
   }
 
-  const handleArchive = (id: string) => {
-    setPets((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, arquivado: true } : p))
+  const handleArchive = async (id: string) => {
+    try {
+      await archiveAdminPet(supabase, id)
+      setPets((prev) =>
+        prev.map((pet) => (pet.id === id ? { ...pet, arquivado: true } : pet))
+      )
+      addToast("Pet arquivado com sucesso!")
+    } catch {
+      addToast("Nao foi possivel arquivar o pet.", "error")
+    }
+  }
+
+  if (loading || isLoadingData) {
+    return (
+      <div className="flex min-h-[360px] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
     )
-    addToast("Pet arquivado com sucesso!")
   }
 
   return (
@@ -378,6 +513,7 @@ export default function PetsPage() {
         isOpen={isModalOpen}
         onClose={handleCloseModal}
         pet={editingPet}
+        tutors={tutors}
         onSave={handleSave}
       />
     </div>

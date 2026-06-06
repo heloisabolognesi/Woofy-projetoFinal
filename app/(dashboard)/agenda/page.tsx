@@ -1,7 +1,9 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useEffect, useMemo, useState } from "react"
+import { useRouter } from "next/navigation"
 import { useApp } from "@/context/app-context"
+import { useAuth } from "@/context/auth-context"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -19,16 +21,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Plus, ChevronLeft, ChevronRight, CalendarDays, Clock, User } from "lucide-react"
+import { Plus, ChevronLeft, ChevronRight, CalendarDays, Clock, User, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { veterinarios, type Agendamento } from "@/lib/mock-data"
+import { createClient } from "@/lib/supabase"
+import {
+  assignVeterinarianToAppointment,
+  createAdminAppointment,
+  getAdminAppointments,
+  getAdminPets,
+  getClinicProfiles,
+  updateAppointmentStatus,
+  type AdminAppointment,
+  type AdminPet,
+  type AgendamentoStatus,
+  type ProfileSummary,
+} from "@/lib/clinic-data"
 
-const vetColors: Record<string, string> = {
-  "Dr. Carlos Silva": "bg-primary",
-  "Dra. Maria Santos": "bg-secondary",
-  "Dr. Pedro Costa": "bg-woofy-gold",
-  "Dra. Ana Oliveira": "bg-woofy-accent",
-}
+const colorClasses = ["bg-primary", "bg-secondary", "bg-woofy-gold", "bg-woofy-accent"]
 
 function getWeekDays(startDate: Date): Date[] {
   const days: Date[] = []
@@ -54,37 +63,87 @@ interface FormData {
   data: string
   horarioInicio: string
   horarioFim: string
-  veterinario: string
+  veterinarioId: string
   tipo: string
 }
 
 export default function AgendaPage() {
-  const { agendamentos, setAgendamentos, pets, addToast } = useApp()
+  const { addToast } = useApp()
+  const { user, loading, refreshProfile } = useAuth()
+  const router = useRouter()
+  const supabase = useMemo(() => createClient(), [])
   const [currentDate, setCurrentDate] = useState(new Date())
   const [isModalOpen, setIsModalOpen] = useState(false)
-  const [selectedAgendamento, setSelectedAgendamento] = useState<Agendamento | null>(null)
+  const [selectedAgendamento, setSelectedAgendamento] = useState<AdminAppointment | null>(null)
+  const [agendamentos, setAgendamentos] = useState<AdminAppointment[]>([])
+  const [pets, setPets] = useState<AdminPet[]>([])
+  const [profiles, setProfiles] = useState<ProfileSummary[]>([])
+  const [isLoadingData, setIsLoadingData] = useState(true)
+  const [isSaving, setIsSaving] = useState(false)
   const [formData, setFormData] = useState<FormData>({
     petId: "",
     data: "",
     horarioInicio: "",
     horarioFim: "",
-    veterinario: "",
+    veterinarioId: "",
     tipo: "",
   })
+
+  const veterinarios = useMemo(
+    () => profiles.filter((profile) => profile.role === "veterinario"),
+    [profiles],
+  )
+
+  const vetColors = useMemo(() => {
+    return veterinarios.reduce<Record<string, string>>((acc, vet, index) => {
+      acc[vet.fullName || vet.id] = colorClasses[index % colorClasses.length]
+      return acc
+    }, {})
+  }, [veterinarios])
 
   const weekDays = useMemo(() => getWeekDays(currentDate), [currentDate])
 
   const agendamentosByDay = useMemo(() => {
-    const map: Record<string, Agendamento[]> = {}
-    agendamentos.forEach((a) => {
-      if (!map[a.data]) map[a.data] = []
-      map[a.data].push(a)
+    const map: Record<string, AdminAppointment[]> = {}
+    agendamentos.forEach((appointment) => {
+      if (!map[appointment.data]) map[appointment.data] = []
+      map[appointment.data].push(appointment)
     })
     Object.values(map).forEach((arr) =>
       arr.sort((a, b) => a.horarioInicio.localeCompare(b.horarioInicio))
     )
     return map
   }, [agendamentos])
+
+  useEffect(() => {
+    async function loadData() {
+      if (loading) return
+      if (!user) {
+        router.replace("/login?redirect=/agenda")
+        return
+      }
+
+      setIsLoadingData(true)
+      await refreshProfile(user.id)
+
+      try {
+        const [appointmentsResult, petsResult, profilesResult] = await Promise.all([
+          getAdminAppointments(supabase),
+          getAdminPets(supabase),
+          getClinicProfiles(supabase),
+        ])
+        setAgendamentos(appointmentsResult)
+        setPets(petsResult)
+        setProfiles(profilesResult)
+      } catch {
+        addToast("Nao foi possivel carregar a agenda real do Supabase.", "error")
+      } finally {
+        setIsLoadingData(false)
+      }
+    }
+
+    loadData()
+  }, [addToast, loading, refreshProfile, router, supabase, user])
 
   const navigateWeek = (direction: "prev" | "next") => {
     const newDate = new Date(currentDate)
@@ -96,38 +155,74 @@ export default function AgendaPage() {
     setCurrentDate(new Date())
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    const pet = pets.find((p) => p.id === formData.petId)
-    if (!pet) return
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
 
-    const newAgendamento: Agendamento = {
-      id: Math.random().toString(36).substring(7),
-      petId: formData.petId,
-      petNome: pet.nome,
-      tutor: pet.tutor,
-      data: formData.data,
-      horarioInicio: formData.horarioInicio,
-      horarioFim: formData.horarioFim,
-      veterinario: formData.veterinario,
-      tipo: formData.tipo,
+    const selectedVet = veterinarios.find((vet) => vet.id === formData.veterinarioId)
+    setIsSaving(true)
+
+    try {
+      const newAppointment = await createAdminAppointment(supabase, {
+        petId: formData.petId,
+        data: formData.data,
+        horarioInicio: formData.horarioInicio,
+        horarioFim: formData.horarioFim,
+        veterinario: selectedVet?.fullName || "A definir",
+        veterinarioId: selectedVet?.id || null,
+        tipo: formData.tipo,
+      })
+
+      setAgendamentos((prev) => [...prev, newAppointment])
+      addToast("Agendamento criado com sucesso!")
+      setIsModalOpen(false)
+      setFormData({
+        petId: "",
+        data: "",
+        horarioInicio: "",
+        horarioFim: "",
+        veterinarioId: "",
+        tipo: "",
+      })
+    } catch {
+      addToast("Nao foi possivel criar o agendamento.", "error")
+    } finally {
+      setIsSaving(false)
     }
-
-    setAgendamentos((prev) => [...prev, newAgendamento])
-    addToast("Agendamento criado com sucesso!")
-    setIsModalOpen(false)
-    setFormData({
-      petId: "",
-      data: "",
-      horarioInicio: "",
-      horarioFim: "",
-      veterinario: "",
-      tipo: "",
-    })
   }
 
-  const handleAgendamentoClick = (agendamento: Agendamento) => {
-    setSelectedAgendamento(agendamento)
+  const handleStatusChange = async (appointment: AdminAppointment, status: AgendamentoStatus) => {
+    try {
+      await updateAppointmentStatus(supabase, appointment.id, status)
+      setAgendamentos((prev) =>
+        prev.map((item) => (item.id === appointment.id ? { ...item, status } : item))
+      )
+      setSelectedAgendamento((current) => (current ? { ...current, status } : current))
+      addToast("Status atualizado com sucesso!")
+    } catch {
+      addToast("Nao foi possivel atualizar o status.", "error")
+    }
+  }
+
+  const handleVeterinarianChange = async (appointment: AdminAppointment, veterinarianId: string) => {
+    const selectedVet = veterinarios.find((vet) => vet.id === veterinarianId)
+    const veterinarianName = selectedVet?.fullName || "A definir"
+
+    try {
+      await assignVeterinarianToAppointment(supabase, appointment.id, selectedVet?.id || null, veterinarianName)
+      setAgendamentos((prev) =>
+        prev.map((item) =>
+          item.id === appointment.id
+            ? { ...item, veterinarioId: selectedVet?.id || null, veterinario: veterinarianName }
+            : item
+        )
+      )
+      setSelectedAgendamento((current) =>
+        current ? { ...current, veterinarioId: selectedVet?.id || null, veterinario: veterinarianName } : current
+      )
+      addToast("Veterinario atribuido com sucesso!")
+    } catch {
+      addToast("Nao foi possivel atribuir o veterinario.", "error")
+    }
   }
 
   const formatDayHeader = (date: Date) => {
@@ -145,6 +240,14 @@ export default function AgendaPage() {
       "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
     ]
     return `${months[weekDays[0].getMonth()]} ${weekDays[0].getFullYear()}`
+  }
+
+  if (loading || isLoadingData) {
+    return (
+      <div className="flex min-h-[360px] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    )
   }
 
   return (
@@ -179,10 +282,10 @@ export default function AgendaPage() {
                   </SelectTrigger>
                   <SelectContent>
                     {pets
-                      .filter((p) => !p.arquivado)
+                      .filter((pet) => !pet.arquivado)
                       .map((pet) => (
                         <SelectItem key={pet.id} value={pet.id}>
-                          {pet.nome} - {pet.tutor}
+                          {pet.nome} - {pet.tutorProfileName || pet.tutor}
                         </SelectItem>
                       ))}
                   </SelectContent>
@@ -228,9 +331,9 @@ export default function AgendaPage() {
               <div className="space-y-2">
                 <Label htmlFor="veterinario">Veterinário</Label>
                 <Select
-                  value={formData.veterinario}
+                  value={formData.veterinarioId}
                   onValueChange={(value: string) =>
-                    setFormData((prev) => ({ ...prev, veterinario: value }))
+                    setFormData((prev) => ({ ...prev, veterinarioId: value }))
                   }
                 >
                   <SelectTrigger id="veterinario">
@@ -238,8 +341,8 @@ export default function AgendaPage() {
                   </SelectTrigger>
                   <SelectContent>
                     {veterinarios.map((vet) => (
-                      <SelectItem key={vet} value={vet}>
-                        {vet}
+                      <SelectItem key={vet.id} value={vet.id}>
+                        {vet.fullName || "Veterinario sem nome"}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -261,14 +364,15 @@ export default function AgendaPage() {
                 <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
                   Cancelar
                 </Button>
-                <Button type="submit">Criar</Button>
+                <Button type="submit" disabled={isSaving || !formData.petId}>
+                  {isSaving ? "Criando..." : "Criar"}
+                </Button>
               </div>
             </form>
           </DialogContent>
         </Dialog>
       </div>
 
-      {/* Week Navigation */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Button variant="outline" size="icon" onClick={() => navigateWeek("prev")}>
@@ -284,17 +388,18 @@ export default function AgendaPage() {
         <h2 className="text-lg font-semibold text-foreground">{formatMonthYear()}</h2>
       </div>
 
-      {/* Veterinario Legend */}
       <div className="flex flex-wrap gap-3">
-        {veterinarios.map((vet) => (
-          <div key={vet} className="flex items-center gap-2">
-            <div className={cn("h-3 w-3 rounded-full", vetColors[vet])} />
-            <span className="text-sm text-muted-foreground">{vet}</span>
-          </div>
-        ))}
+        {veterinarios.map((vet) => {
+          const vetName = vet.fullName || vet.id
+          return (
+            <div key={vet.id} className="flex items-center gap-2">
+              <div className={cn("h-3 w-3 rounded-full", vetColors[vetName] || "bg-primary")} />
+              <span className="text-sm text-muted-foreground">{vet.fullName || "Veterinario sem nome"}</span>
+            </div>
+          )
+        })}
       </div>
 
-      {/* Calendar Grid */}
       <div className="bg-card rounded-xl border border-border overflow-hidden">
         <div className="grid grid-cols-7 border-b border-border">
           {weekDays.map((date) => {
@@ -341,7 +446,7 @@ export default function AgendaPage() {
                   {dayAgendamentos.map((agendamento) => (
                     <button
                       key={agendamento.id}
-                      onClick={() => handleAgendamentoClick(agendamento)}
+                      onClick={() => setSelectedAgendamento(agendamento)}
                       className={cn(
                         "w-full text-left p-2 rounded-lg text-xs text-white transition-opacity hover:opacity-80",
                         vetColors[agendamento.veterinario] || "bg-primary"
@@ -351,6 +456,7 @@ export default function AgendaPage() {
                       <p className="opacity-80">
                         {agendamento.horarioInicio} - {agendamento.horarioFim}
                       </p>
+                      <p className="mt-1 opacity-80">{agendamento.status}</p>
                     </button>
                   ))}
                 </div>
@@ -360,7 +466,6 @@ export default function AgendaPage() {
         </div>
       </div>
 
-      {/* Agendamento Details Modal */}
       <Dialog
         open={!!selectedAgendamento}
         onOpenChange={() => setSelectedAgendamento(null)}
@@ -391,7 +496,7 @@ export default function AgendaPage() {
                   <User className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm">
                     <span className="text-muted-foreground">Tutor:</span>{" "}
-                    {selectedAgendamento.tutor}
+                    {selectedAgendamento.tutorProfileName || selectedAgendamento.tutor}
                   </span>
                 </div>
                 <div className="flex items-center gap-3">
@@ -410,17 +515,44 @@ export default function AgendaPage() {
                     {selectedAgendamento.horarioInicio} - {selectedAgendamento.horarioFim}
                   </span>
                 </div>
-                <div className="flex items-center gap-3">
-                  <div
-                    className={cn(
-                      "h-4 w-4 rounded-full",
-                      vetColors[selectedAgendamento.veterinario] || "bg-primary"
-                    )}
-                  />
-                  <span className="text-sm">
-                    <span className="text-muted-foreground">Veterinário:</span>{" "}
-                    {selectedAgendamento.veterinario}
-                  </span>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Status</Label>
+                    <Select
+                      value={selectedAgendamento.status}
+                      onValueChange={(value) =>
+                        handleStatusChange(selectedAgendamento, value as AgendamentoStatus)
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="agendado">Agendado</SelectItem>
+                        <SelectItem value="confirmado">Confirmado</SelectItem>
+                        <SelectItem value="realizado">Realizado</SelectItem>
+                        <SelectItem value="cancelado">Cancelado</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Veterinário</Label>
+                    <Select
+                      value={selectedAgendamento.veterinarioId || ""}
+                      onValueChange={(value) => handleVeterinarianChange(selectedAgendamento, value)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder={selectedAgendamento.veterinario || "A definir"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {veterinarios.map((vet) => (
+                          <SelectItem key={vet.id} value={vet.id}>
+                            {vet.fullName || "Veterinario sem nome"}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               </div>
 

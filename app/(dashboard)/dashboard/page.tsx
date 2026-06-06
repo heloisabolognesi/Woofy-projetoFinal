@@ -1,7 +1,10 @@
 "use client"
 
-import { useApp } from "@/context/app-context"
-import { PawPrint, Stethoscope, Syringe, DollarSign, Clock, Calendar } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+import { useRouter } from "next/navigation"
+import { PawPrint, Stethoscope, Syringe, DollarSign, Clock, Calendar, Loader2 } from "lucide-react"
+import { createClient } from "@/lib/supabase"
+import { useAuth } from "@/context/auth-context"
 import {
   BarChart,
   Bar,
@@ -68,17 +71,119 @@ function AppointmentItem({
   )
 }
 
+interface PetRow {
+  id: string
+  nome: string
+  arquivado: boolean
+}
+
+interface AgendamentoRow {
+  id: string
+  pet_id: string
+  user_id: string
+  tutor: string
+  data: string
+  horario_inicio: string
+  horario_fim: string
+  veterinario: string
+  tipo: string
+  status?: string | null
+}
+
+interface ConsultaRow {
+  id: string
+  data: string
+  status: "agendada" | "realizada" | "cancelada"
+}
+
+interface VacinaRow {
+  id: string
+  proxima_dose: string | null
+}
+
+interface LancamentoRow {
+  id: string
+  tipo: "entrada" | "saida"
+  valor: number
+  data: string
+}
+
+interface AdminDashboardData {
+  pets: PetRow[]
+  agendamentos: AgendamentoRow[]
+  consultas: ConsultaRow[]
+  vacinas: VacinaRow[]
+  lancamentos: LancamentoRow[]
+  petNameById: Record<string, string>
+}
+
 export default function DashboardPage() {
-  const { pets, consultas, vacinas, lancamentos, agendamentos } = useApp()
+  const { user, loading, refreshProfile } = useAuth()
+  const router = useRouter()
+  const supabase = useMemo(() => createClient(), [])
+  const [data, setData] = useState<AdminDashboardData>({
+    pets: [],
+    agendamentos: [],
+    consultas: [],
+    vacinas: [],
+    lancamentos: [],
+    petNameById: {},
+  })
+  const [isLoading, setIsLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   const today = new Date().toISOString().split("T")[0]
 
-  const consultasHoje = consultas.filter(
+  useEffect(() => {
+    async function loadDashboardData() {
+      if (loading) return
+      if (!user) {
+        router.replace("/login?redirect=/dashboard")
+        return
+      }
+
+      setIsLoading(true)
+      setLoadError(null)
+      await refreshProfile(user.id)
+
+      const [petsResult, agendamentosResult, consultasResult, vacinasResult, lancamentosResult] = await Promise.all([
+        supabase.from("pets").select("id,nome,arquivado").order("created_at", { ascending: false }),
+        supabase.from("agendamentos").select("*").order("data", { ascending: true }).order("horario_inicio", { ascending: true }),
+        supabase.from("consultas").select("id,data,status").order("data", { ascending: false }),
+        supabase.from("vacinas").select("id,proxima_dose").order("proxima_dose", { ascending: true }),
+        supabase.from("lancamentos").select("id,tipo,valor,data").order("data", { ascending: false }),
+      ])
+
+      const error = petsResult.error || agendamentosResult.error || consultasResult.error || vacinasResult.error || lancamentosResult.error
+      if (error) {
+        setLoadError("Nao foi possivel carregar todos os indicadores reais do Supabase.")
+      }
+
+      const pets = (petsResult.data || []) as PetRow[]
+      setData({
+        pets,
+        agendamentos: (agendamentosResult.data || []) as AgendamentoRow[],
+        consultas: (consultasResult.data || []) as ConsultaRow[],
+        vacinas: (vacinasResult.data || []) as VacinaRow[],
+        lancamentos: (lancamentosResult.data || []) as LancamentoRow[],
+        petNameById: pets.reduce<Record<string, string>>((acc, pet) => {
+          acc[pet.id] = pet.nome
+          return acc
+        }, {}),
+      })
+      setIsLoading(false)
+    }
+
+    loadDashboardData()
+  }, [loading, refreshProfile, router, supabase, user])
+
+  const consultasHoje = data.consultas.filter(
     (c) => c.data === today && c.status === "agendada"
   ).length
 
-  const vacinasPendentes = vacinas.filter((v) => {
-    const proximaDose = new Date(v.proximaDose)
+  const vacinasPendentes = data.vacinas.filter((v) => {
+    if (!v.proxima_dose) return false
+    const proximaDose = new Date(v.proxima_dose)
     const now = new Date()
     const diffDays = Math.ceil(
       (proximaDose.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
@@ -86,7 +191,7 @@ export default function DashboardPage() {
     return diffDays <= 30
   }).length
 
-  const receitaMes = lancamentos
+  const receitaMes = data.lancamentos
     .filter((l) => {
       const data = new Date(l.data)
       const now = new Date()
@@ -98,11 +203,11 @@ export default function DashboardPage() {
     })
     .reduce((acc, l) => acc + l.valor, 0)
 
-  const proximosAgendamentos = agendamentos
+  const proximosAgendamentos = data.agendamentos
     .filter((a) => a.data >= today)
     .sort((a, b) => {
       if (a.data === b.data) {
-        return a.horarioInicio.localeCompare(b.horarioInicio)
+        return a.horario_inicio.localeCompare(b.horario_inicio)
       }
       return a.data.localeCompare(b.data)
     })
@@ -117,6 +222,14 @@ export default function DashboardPage() {
     { name: "Sab", consultas: 6 },
   ]
 
+  if (isLoading) {
+    return (
+      <div className="flex min-h-[360px] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -124,12 +237,13 @@ export default function DashboardPage() {
         <p className="text-muted-foreground mt-1">
           Bem-vindo ao sistema Woofy. Aqui está o resumo da sua clínica.
         </p>
+        {loadError && <p className="mt-2 text-sm text-destructive">{loadError}</p>}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           title="Total de Pets"
-          value={pets.filter((p) => !p.arquivado).length}
+          value={data.pets.filter((p) => !p.arquivado).length}
           icon={PawPrint}
           color="bg-primary"
         />
@@ -161,6 +275,9 @@ export default function DashboardPage() {
               Consultas por Dia da Semana
             </h2>
           </div>
+          <p className="mb-3 text-xs text-muted-foreground">
+            TODO: substituir este grafico por agregacao real de consultas quando a etapa analitica for implementada.
+          </p>
           <div className="h-[250px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData}>
@@ -192,8 +309,8 @@ export default function DashboardPage() {
               proximosAgendamentos.map((agendamento) => (
                 <AppointmentItem
                   key={agendamento.id}
-                  time={agendamento.horarioInicio}
-                  petName={agendamento.petNome}
+                  time={agendamento.horario_inicio}
+                  petName={data.petNameById[agendamento.pet_id] || "Pet sem nome"}
                   tutor={agendamento.tutor}
                   type={agendamento.tipo}
                   veterinario={agendamento.veterinario}
