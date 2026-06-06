@@ -113,6 +113,7 @@ export function Header() {
 
           <Button
             asChild
+            title="Efetue login para marcar uma consulta"
             className={cn(
               "rounded-full px-6 font-bold shadow-lg transition-all duration-300 hover:scale-105",
               isScrolled
@@ -120,7 +121,9 @@ export function Header() {
                 : "bg-[#AAC9BA] text-[#305165] hover:bg-[#AAC9BA]/90 shadow-black/20"
             )}
           >
-            <a href="#contato">Agendar Consulta</a>
+            <Link href="/login?redirect=/tutor" aria-label="Efetue login para marcar uma consulta">
+              Entrar para agendar
+            </Link>
           </Button>
         </div>
 
@@ -180,8 +183,15 @@ export function Header() {
               <Button variant="outline" asChild className="w-full justify-center border-[#305165] dark:border-slate-700 text-[#305165] dark:text-gray-200 hover:bg-[#AAC9BA]/10 rounded-full">
                 <Link href="/dashboard" onClick={() => setIsMobileMenuOpen(false)}>Entrar</Link>
               </Button>
-              <Button asChild className="w-full justify-center bg-gradient-to-r from-[#305165] to-[#5E929F] text-white rounded-full" onClick={() => setIsMobileMenuOpen(false)}>
-                <a href="#contato">Agendar Consulta</a>
+              <Button
+                asChild
+                className="w-full justify-center bg-gradient-to-r from-[#305165] to-[#5E929F] text-white rounded-full"
+                onClick={() => setIsMobileMenuOpen(false)}
+                title="Efetue login para marcar uma consulta"
+              >
+                <Link href="/login?redirect=/tutor" aria-label="Efetue login para marcar uma consulta">
+                  Entrar para agendar
+                </Link>
               </Button>
             </div>
           </nav>

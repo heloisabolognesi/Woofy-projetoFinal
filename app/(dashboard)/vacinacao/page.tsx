@@ -6,6 +6,7 @@ import { type Vacina } from "@/lib/mock-data"
 import { Syringe, Plus, X, AlertTriangle, CheckCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 
+// TODO: migrar /vacinacao para dados reais do Supabase em uma próxima fase.
 function VacinaModal({
   isOpen,
   onClose,
@@ -199,7 +200,7 @@ export default function VacinacaoPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-foreground font-serif">
-            Vacinacao
+            Vacinação
           </h1>
           <p className="text-muted-foreground mt-1">
             Controle de vacinas dos pets

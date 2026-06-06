@@ -10,6 +10,7 @@ import {
   ClipboardList,
   DollarSign,
   CalendarDays,
+  Home,
   Menu,
   X,
 } from "lucide-react"
@@ -17,11 +18,12 @@ import { useState } from "react"
 import { cn } from "@/lib/utils"
 
 const navItems = [
+  { href: "/", label: "Voltar ao site", icon: Home },
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/pets", label: "Pets", icon: PawPrint },
   { href: "/consultas", label: "Consultas", icon: Stethoscope },
-  { href: "/vacinacao", label: "Vacinacao", icon: Syringe },
-  { href: "/historico", label: "Historico", icon: ClipboardList },
+  { href: "/vacinacao", label: "Vacinação", icon: Syringe },
+  { href: "/historico", label: "Histórico", icon: ClipboardList },
   { href: "/financeiro", label: "Financeiro", icon: DollarSign },
   { href: "/agenda", label: "Agenda", icon: CalendarDays },
 ]

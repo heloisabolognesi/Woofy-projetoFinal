@@ -3,7 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Eye, EyeOff, UserPlus, Loader2, CheckCircle2 } from "lucide-react";
+import { Eye, EyeOff, UserPlus, Loader2, CheckCircle2, Moon, Sun } from "lucide-react";
+import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,6 +21,7 @@ export default function RegistroPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const { signUp } = useAuth();
+  const { theme, setTheme } = useTheme();
   const router = useRouter();
 
   const validateForm = (): string | null => {
@@ -92,6 +94,18 @@ export default function RegistroPage() {
         </div>
 
         <div className="w-full max-w-md relative z-10">
+          <div className="mb-4 flex justify-end">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              className="rounded-full text-[#305165] hover:bg-[#AAC9BA]/15 dark:text-gray-200 dark:hover:bg-slate-800"
+              aria-label="Alternar tema"
+            >
+              {theme === "dark" ? <Sun className="h-5 w-5 text-yellow-400" /> : <Moon className="h-5 w-5" />}
+            </Button>
+          </div>
           <div className="flex justify-center mb-8">
             <Link
               href="/"
@@ -144,6 +158,18 @@ export default function RegistroPage() {
       </div>
 
       <div className="w-full max-w-md relative z-10">
+        <div className="mb-4 flex justify-end">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            className="rounded-full text-[#305165] hover:bg-[#AAC9BA]/15 dark:text-gray-200 dark:hover:bg-slate-800"
+            aria-label="Alternar tema"
+          >
+            {theme === "dark" ? <Sun className="h-5 w-5 text-yellow-400" /> : <Moon className="h-5 w-5" />}
+          </Button>
+        </div>
         {/* Logo */}
         <div className="flex justify-center mb-8">
           <Link

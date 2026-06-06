@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { PawPrint, Stethoscope, Syringe, DollarSign, Clock, Calendar, Loader2 } from "lucide-react"
 import { createClient } from "@/lib/supabase"
 import { useAuth } from "@/context/auth-context"
+import { getAdminUpcomingAppointments, type AdminAppointment } from "@/lib/clinic-data"
 import {
   BarChart,
   Bar,
@@ -77,19 +78,6 @@ interface PetRow {
   arquivado: boolean
 }
 
-interface AgendamentoRow {
-  id: string
-  pet_id: string
-  user_id: string
-  tutor: string
-  data: string
-  horario_inicio: string
-  horario_fim: string
-  veterinario: string
-  tipo: string
-  status?: string | null
-}
-
 interface ConsultaRow {
   id: string
   data: string
@@ -110,11 +98,10 @@ interface LancamentoRow {
 
 interface AdminDashboardData {
   pets: PetRow[]
-  agendamentos: AgendamentoRow[]
+  proximosAgendamentos: AdminAppointment[]
   consultas: ConsultaRow[]
   vacinas: VacinaRow[]
   lancamentos: LancamentoRow[]
-  petNameById: Record<string, string>
 }
 
 export default function DashboardPage() {
@@ -123,11 +110,10 @@ export default function DashboardPage() {
   const supabase = useMemo(() => createClient(), [])
   const [data, setData] = useState<AdminDashboardData>({
     pets: [],
-    agendamentos: [],
+    proximosAgendamentos: [],
     consultas: [],
     vacinas: [],
     lancamentos: [],
-    petNameById: {},
   })
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -146,39 +132,40 @@ export default function DashboardPage() {
       setLoadError(null)
       await refreshProfile(user.id)
 
-      const [petsResult, agendamentosResult, consultasResult, vacinasResult, lancamentosResult] = await Promise.all([
-        supabase.from("pets").select("id,nome,arquivado").order("created_at", { ascending: false }),
-        supabase.from("agendamentos").select("*").order("data", { ascending: true }).order("horario_inicio", { ascending: true }),
-        supabase.from("consultas").select("id,data,status").order("data", { ascending: false }),
-        supabase.from("vacinas").select("id,proxima_dose").order("proxima_dose", { ascending: true }),
-        supabase.from("lancamentos").select("id,tipo,valor,data").order("data", { ascending: false }),
-      ])
+      try {
+        const [petsResult, proximosAgendamentosResult, consultasResult, vacinasResult, lancamentosResult] = await Promise.all([
+          supabase.from("pets").select("id,nome,arquivado").order("created_at", { ascending: false }),
+          getAdminUpcomingAppointments(supabase),
+          supabase.from("consultas").select("id,data,status").order("data", { ascending: false }),
+          supabase.from("vacinas").select("id,proxima_dose").order("proxima_dose", { ascending: true }),
+          supabase.from("lancamentos").select("id,tipo,valor,data").order("data", { ascending: false }),
+        ])
 
-      const error = petsResult.error || agendamentosResult.error || consultasResult.error || vacinasResult.error || lancamentosResult.error
-      if (error) {
-        setLoadError("Nao foi possivel carregar todos os indicadores reais do Supabase.")
+        const error = petsResult.error || consultasResult.error || vacinasResult.error || lancamentosResult.error
+        if (error) {
+          setLoadError("Não foi possível carregar todos os indicadores reais do Supabase.")
+        }
+
+        const pets = (petsResult.data || []) as PetRow[]
+        setData({
+          pets,
+          proximosAgendamentos: proximosAgendamentosResult,
+          consultas: (consultasResult.data || []) as ConsultaRow[],
+          vacinas: (vacinasResult.data || []) as VacinaRow[],
+          lancamentos: (lancamentosResult.data || []) as LancamentoRow[],
+        })
+      } catch {
+        setLoadError("Não foi possível carregar todos os indicadores reais do Supabase.")
+      } finally {
+        setIsLoading(false)
       }
-
-      const pets = (petsResult.data || []) as PetRow[]
-      setData({
-        pets,
-        agendamentos: (agendamentosResult.data || []) as AgendamentoRow[],
-        consultas: (consultasResult.data || []) as ConsultaRow[],
-        vacinas: (vacinasResult.data || []) as VacinaRow[],
-        lancamentos: (lancamentosResult.data || []) as LancamentoRow[],
-        petNameById: pets.reduce<Record<string, string>>((acc, pet) => {
-          acc[pet.id] = pet.nome
-          return acc
-        }, {}),
-      })
-      setIsLoading(false)
     }
 
     loadDashboardData()
   }, [loading, refreshProfile, router, supabase, user])
 
-  // consultas = registros clinicos; agendamentos = horarios marcados na agenda.
-  const consultasHoje = data.consultas.filter((c) => c.data === today).length
+  // consultas = registros clínicos realizados; agendamentos = horários marcados na agenda.
+  const consultasHoje = data.consultas.filter((c) => c.data === today && c.status === "realizada").length
 
   const vacinasPendentes = data.vacinas.filter((v) => {
     if (!v.proxima_dose) return false
@@ -202,15 +189,7 @@ export default function DashboardPage() {
     })
     .reduce((acc, l) => acc + l.valor, 0)
 
-  const proximosAgendamentos = data.agendamentos
-    .filter((a) => a.data >= today)
-    .sort((a, b) => {
-      if (a.data === b.data) {
-        return a.horario_inicio.localeCompare(b.horario_inicio)
-      }
-      return a.data.localeCompare(b.data)
-    })
-    .slice(0, 5)
+  const proximosAgendamentos = data.proximosAgendamentos
 
   const chartData = [
     { name: "Seg", consultas: 8 },
@@ -275,7 +254,7 @@ export default function DashboardPage() {
             </h2>
           </div>
           <p className="mb-3 text-xs text-muted-foreground">
-            TODO: substituir este grafico por agregacao real de consultas quando a etapa analitica for implementada.
+            TODO: substituir este gráfico por agregação real de consultas quando a etapa analítica for implementada.
           </p>
           <div className="h-[250px]">
             <ResponsiveContainer width="100%" height="100%">
@@ -308,8 +287,8 @@ export default function DashboardPage() {
               proximosAgendamentos.map((agendamento) => (
                 <AppointmentItem
                   key={agendamento.id}
-                  time={agendamento.horario_inicio}
-                  petName={data.petNameById[agendamento.pet_id] || "Pet sem nome"}
+                  time={agendamento.horarioInicio}
+                  petName={agendamento.petNome}
                   tutor={agendamento.tutor}
                   type={agendamento.tipo}
                   veterinario={agendamento.veterinario}

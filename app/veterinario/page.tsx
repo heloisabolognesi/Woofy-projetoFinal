@@ -1,9 +1,9 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { CalendarDays, ClipboardList, Loader2, LogOut, Stethoscope } from "lucide-react"
+import { CalendarDays, CheckCircle2, ClipboardList, Loader2, LogOut, Stethoscope } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -13,7 +13,7 @@ import { createClient } from "@/lib/supabase"
 import {
   createConsultationWithHistory,
   getVeterinarianAppointments,
-  type ClinicAppointment,
+  type ClinicAppointmentDetail,
   type HistoricoTipo,
 } from "@/lib/clinic-data"
 
@@ -23,7 +23,7 @@ export default function VeterinarioPage() {
   const { user, profile, loading, refreshProfile, signOut } = useAuth()
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
-  const [agendamentos, setAgendamentos] = useState<ClinicAppointment[]>([])
+  const [agendamentos, setAgendamentos] = useState<ClinicAppointmentDetail[]>([])
   const [selectedAppointmentId, setSelectedAppointmentId] = useState("")
   const [feedback, setFeedback] = useState("")
   const [historyDescription, setHistoryDescription] = useState("")
@@ -35,7 +35,34 @@ export default function VeterinarioPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   const selectedAppointment = agendamentos.find((item) => item.id === selectedAppointmentId) || null
-  const veterinarianName = profile?.full_name || user?.email || "Veterinario"
+  const veterinarianName = profile?.full_name || user?.email || "Veterinário"
+  const activeAppointments = agendamentos.filter((appointment) =>
+    appointment.status === "agendado" || appointment.status === "confirmado"
+  )
+
+  const loadVeterinarianData = useCallback(async (preferredAppointmentId?: string) => {
+    if (!user) return
+
+    setIsLoadingData(true)
+    setErrorMessage(null)
+    await refreshProfile(user.id)
+
+    try {
+      const appointments = await getVeterinarianAppointments(supabase, user.id)
+      setAgendamentos(appointments)
+      setSelectedAppointmentId((current) => {
+        const nextSelectedId = preferredAppointmentId || current
+        if (nextSelectedId && appointments.some((appointment) => appointment.id === nextSelectedId)) {
+          return nextSelectedId
+        }
+        return appointments[0]?.id || ""
+      })
+    } catch {
+      setErrorMessage("Não foi possível carregar os agendamentos.")
+    } finally {
+      setIsLoadingData(false)
+    }
+  }, [refreshProfile, supabase, user])
 
   useEffect(() => {
     if (loading) return
@@ -44,26 +71,25 @@ export default function VeterinarioPage() {
       return
     }
 
-    async function loadVeterinarianData() {
-      if (!user) return
+    loadVeterinarianData()
+  }, [loadVeterinarianData, loading, router, user])
 
-      setIsLoadingData(true)
-      setErrorMessage(null)
-      await refreshProfile(user.id)
+  useEffect(() => {
+    if (!selectedAppointment) return
 
-      try {
-        const appointments = await getVeterinarianAppointments(supabase, user.id)
-        setAgendamentos(appointments)
-        setSelectedAppointmentId((current) => current || appointments[0]?.id || "")
-      } catch {
-        setErrorMessage("Nao foi possivel carregar os agendamentos.")
-      }
-
-      setIsLoadingData(false)
+    if (selectedAppointment.consultation) {
+      setFeedback(selectedAppointment.consultation.motivo)
+      setHistoryDescription(selectedAppointment.historyEntry?.descricao || "")
+      setHistoryType(selectedAppointment.historyEntry?.tipo || "consulta")
+      setHistoryDate(selectedAppointment.historyEntry?.data || today)
+      return
     }
 
-    loadVeterinarianData()
-  }, [loading, refreshProfile, router, supabase, user])
+    setFeedback("")
+    setHistoryDescription("")
+    setHistoryType("consulta")
+    setHistoryDate(today)
+  }, [selectedAppointment])
 
   async function handleSignOut() {
     await signOut()
@@ -76,6 +102,14 @@ export default function VeterinarioPage() {
       setErrorMessage("Selecione um agendamento e escreva o feedback da consulta.")
       return
     }
+    if (selectedAppointment.consultation) {
+      setErrorMessage("Este agendamento já possui uma consulta registrada. O feedback existente foi mantido para evitar duplicidade.")
+      return
+    }
+    if (selectedAppointment.status === "cancelado") {
+      setErrorMessage("Agendamentos cancelados não podem receber feedback clínico.")
+      return
+    }
 
     const description = historyDescription.trim() || feedback.trim()
     setIsSaving(true)
@@ -83,7 +117,7 @@ export default function VeterinarioPage() {
     setErrorMessage(null)
 
     try {
-      await createConsultationWithHistory(supabase, {
+      const savedConsultation = await createConsultationWithHistory(supabase, {
         appointment: selectedAppointment,
         veterinarianId: user.id,
         veterinarianName,
@@ -92,21 +126,15 @@ export default function VeterinarioPage() {
         historyType,
         historyDate,
       })
+      if (savedConsultation.agendamento_id === selectedAppointment.id) {
+        await loadVeterinarianData(selectedAppointment.id)
+      }
     } catch {
       setIsSaving(false)
-      setErrorMessage("Nao foi possivel registrar a consulta e o historico. Verifique se a migration de permissoes foi aplicada.")
+      setErrorMessage("Não foi possível registrar a consulta e o histórico. Verifique se a migration de permissões foi aplicada.")
       return
     }
 
-    setFeedback("")
-    setHistoryDescription("")
-    setHistoryType("consulta")
-    setHistoryDate(today)
-    setAgendamentos((current) => {
-      const remaining = current.filter((appointment) => appointment.id !== selectedAppointment.id)
-      setSelectedAppointmentId(remaining[0]?.id || "")
-      return remaining
-    })
     setIsSaving(false)
     setMessage(`Feedback registrado para ${selectedAppointment.petNome}.`)
   }
@@ -135,21 +163,21 @@ export default function VeterinarioPage() {
 
       <main className="mx-auto max-w-6xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
         <section className="rounded-lg border border-[#AAC9BA]/40 bg-white p-6 shadow-sm dark:bg-slate-800">
-          <p className="text-sm font-semibold uppercase tracking-wide text-[#5E929F]">Area veterinaria</p>
+          <p className="text-sm font-semibold uppercase tracking-wide text-[#5E929F]">Área veterinária</p>
           <h1 className="mt-2 font-serif text-3xl font-bold text-[#305165] dark:text-white">
-            Ola, {profile?.full_name || "veterinario"}
+            Olá, {profile?.full_name || "veterinário"}
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-slate-600 dark:text-slate-300">
-            Consulte os agendamentos reais da clinica e registre feedback clinico para o historico do pet.
+            Consulte os agendamentos reais da clínica e registre feedback clínico para o histórico do pet.
           </p>
           {message && <p className="mt-3 text-sm font-medium text-green-700">{message}</p>}
           {errorMessage && <p className="mt-3 text-sm font-medium text-destructive">{errorMessage}</p>}
         </section>
 
         <section className="grid gap-4 md:grid-cols-3">
-          <SummaryCard icon={CalendarDays} title="Agendamentos" value={agendamentos.length} />
-          <SummaryCard icon={Stethoscope} title="Feedbacks" value="consultas" />
-          <SummaryCard icon={ClipboardList} title="Historico" value="clinico" />
+          <SummaryCard icon={CalendarDays} title="Ativos" value={activeAppointments.length} />
+          <SummaryCard icon={Stethoscope} title="Realizados" value={agendamentos.filter((item) => item.status === "realizado").length} />
+          <SummaryCard icon={ClipboardList} title="Feedbacks registrados" value={agendamentos.filter((item) => item.consultation).length} />
         </section>
 
         <section className="grid gap-6 lg:grid-cols-[1fr_420px]">
@@ -175,7 +203,7 @@ export default function VeterinarioPage() {
                             Tutor: {appointment.tutorDisplayName}
                           </p>
                           <p className="text-sm text-muted-foreground">
-                            Veterinario: {appointment.veterinarianDisplayName}
+                            Veterinário: {appointment.veterinarianDisplayName}
                           </p>
                         </div>
                         <div className="text-left sm:text-right">
@@ -183,7 +211,16 @@ export default function VeterinarioPage() {
                             {appointment.data} as {appointment.horarioInicio}
                           </p>
                           <p className="text-sm text-muted-foreground">{appointment.tipo}</p>
-                          <p className="text-xs uppercase text-muted-foreground">{appointment.status}</p>
+                          <p className="text-xs uppercase text-muted-foreground">{statusLabel(appointment.status)}</p>
+                          <div className="mt-2 flex flex-wrap gap-1 sm:justify-end">
+                            {appointment.status === "realizado" && <RecordBadge>Consulta realizada</RecordBadge>}
+                            <RecordBadge muted={!appointment.consultation}>
+                              {appointment.consultation ? "Feedback registrado" : "Feedback pendente"}
+                            </RecordBadge>
+                            <RecordBadge muted={!appointment.historyEntry}>
+                              {appointment.historyEntry ? "Histórico registrado" : "Histórico pendente"}
+                            </RecordBadge>
+                          </div>
                         </div>
                       </div>
                     </button>
@@ -191,12 +228,44 @@ export default function VeterinarioPage() {
                 })}
               </div>
             ) : (
-              <EmptyState text="Nenhum agendamento futuro encontrado." />
+              <EmptyState text="Nenhum agendamento encontrado." />
             )}
           </Panel>
 
-          <Panel title="Registrar feedback" icon={Stethoscope}>
+          <Panel title="Feedback e Histórico" icon={Stethoscope}>
             <form onSubmit={handleSaveClinicalRecord} className="space-y-4">
+              {selectedAppointment && (
+                <div className="rounded-lg border border-border bg-background p-4 text-sm">
+                  <div className="grid gap-2">
+                    <InfoLine label="Pet" value={`${selectedAppointment.pet.nome} - ${selectedAppointment.pet.raca}`} />
+                    <InfoLine label="Tutor" value={selectedAppointment.tutorDisplayName} />
+                    <InfoLine label="Data" value={`${selectedAppointment.data} ${selectedAppointment.horarioInicio}-${selectedAppointment.horarioFim}`} />
+                    <InfoLine label="Status" value={statusLabel(selectedAppointment.status)} />
+                    <InfoLine label="Veterinário" value={selectedAppointment.veterinarianDisplayName} />
+                    <InfoLine
+                      label="Feedback"
+                      value={selectedAppointment.consultation ? "Registrado" : "Ainda não registrado"}
+                    />
+                    <InfoLine
+                      label="Histórico"
+                      value={selectedAppointment.historyEntry ? "Registrado" : "Ainda não registrado"}
+                    />
+                  </div>
+                  {selectedAppointment.consultation && (
+                    <div className="mt-4 border-t border-border pt-3">
+                      <p className="font-medium text-foreground">Feedback da consulta</p>
+                      <p className="mt-1 text-muted-foreground">{selectedAppointment.consultation.motivo}</p>
+                    </div>
+                  )}
+                  {selectedAppointment.historyEntry && (
+                    <div className="mt-4 border-t border-border pt-3">
+                      <p className="font-medium text-foreground">Histórico do pet</p>
+                      <p className="mt-1 text-muted-foreground">{selectedAppointment.historyEntry.descricao}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="space-y-2">
                 <Label htmlFor="selectedAppointment">Agendamento</Label>
                 <select
@@ -209,7 +278,7 @@ export default function VeterinarioPage() {
                   <option value="">Selecione</option>
                   {agendamentos.map((appointment) => (
                     <option key={appointment.id} value={appointment.id}>
-                      {appointment.petNome} - {appointment.data} {appointment.horarioInicio}
+                      {appointment.petNome} - {appointment.data} {appointment.horarioInicio} - {appointment.status}
                     </option>
                   ))}
                 </select>
@@ -223,6 +292,7 @@ export default function VeterinarioPage() {
                     id="historyType"
                     value={historyType}
                     onChange={(event) => setHistoryType(event.target.value as HistoricoTipo)}
+                    disabled={!!selectedAppointment?.consultation}
                     className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                   >
                     <option value="consulta">Consulta</option>
@@ -239,23 +309,29 @@ export default function VeterinarioPage() {
                   required
                   value={feedback}
                   onChange={(event) => setFeedback(event.target.value)}
+                  readOnly={!!selectedAppointment?.consultation}
                   className="min-h-28"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="historyDescription">Descricao do historico</Label>
+                <Label htmlFor="historyDescription">Descrição do histórico</Label>
                 <Textarea
                   id="historyDescription"
                   value={historyDescription}
                   onChange={(event) => setHistoryDescription(event.target.value)}
+                  readOnly={!!selectedAppointment?.consultation}
                   className="min-h-24"
                 />
               </div>
 
-              <Button type="submit" disabled={isSaving || !selectedAppointmentId} className="w-full gap-2">
+              <Button
+                type="submit"
+                disabled={isSaving || !selectedAppointmentId || !!selectedAppointment?.consultation || selectedAppointment?.status === "cancelado"}
+                className="w-full gap-2"
+              >
                 {isSaving && <Loader2 className="h-4 w-4 animate-spin" />}
-                Salvar feedback e historico
+                {selectedAppointment?.consultation ? "Consulta já registrada" : "Salvar feedback e histórico"}
               </Button>
             </form>
           </Panel>
@@ -307,6 +383,35 @@ function Field({
       <Input id={id} type={type} required={required} value={value} onChange={(event) => onChange(event.target.value)} />
     </div>
   )
+}
+
+function InfoLine({ label, value }: { label: string; value: string }) {
+  return (
+    <p className="text-muted-foreground">
+      <span className="font-medium text-foreground">{label}:</span> {value}
+    </p>
+  )
+}
+
+function RecordBadge({ children, muted = false }: { children: React.ReactNode; muted?: boolean }) {
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+      muted ? "bg-muted text-muted-foreground" : "bg-[#AAC9BA]/25 text-[#305165] dark:text-[#F5F4EE]"
+    }`}>
+      {!muted && <CheckCircle2 className="h-3 w-3" />}
+      {children}
+    </span>
+  )
+}
+
+function statusLabel(status: string) {
+  const labels: Record<string, string> = {
+    agendado: "Agendado",
+    confirmado: "Confirmado",
+    realizado: "Realizado",
+    cancelado: "Cancelado",
+  }
+  return labels[status] || status
 }
 
 function EmptyState({ text }: { text: string }) {

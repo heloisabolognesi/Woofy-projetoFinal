@@ -3,7 +3,8 @@
 import { Suspense, useState } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
-import { Eye, EyeOff, LogIn, Loader2 } from "lucide-react"
+import { Eye, EyeOff, LogIn, Loader2, Moon, Sun } from "lucide-react"
+import { useTheme } from "next-themes"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -17,6 +18,7 @@ function LoginForm() {
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const { signIn } = useAuth()
+  const { theme, setTheme } = useTheme()
   const router = useRouter()
   const searchParams = useSearchParams()
   const redirect = searchParams.get("redirect")
@@ -59,6 +61,18 @@ function LoginForm() {
       </div>
 
       <div className="w-full max-w-md relative z-10">
+        <div className="mb-4 flex justify-end">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            className="rounded-full text-[#305165] hover:bg-[#AAC9BA]/15 dark:text-gray-200 dark:hover:bg-slate-800"
+            aria-label="Alternar tema"
+          >
+            {theme === "dark" ? <Sun className="h-5 w-5 text-yellow-400" /> : <Moon className="h-5 w-5" />}
+          </Button>
+        </div>
         {/* Logo */}
         <div className="flex justify-center mb-8">
           <Link href="/" className="transition-transform duration-300 hover:scale-105">

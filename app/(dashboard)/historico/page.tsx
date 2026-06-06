@@ -51,7 +51,7 @@ export default function HistoricoPage() {
       try {
         setHistorico(await getAdminHistoryEntries(supabase))
       } catch {
-        setErrorMessage("Nao foi possivel carregar o historico real do Supabase.")
+        setErrorMessage("Não foi possível carregar o histórico real do Supabase.")
       } finally {
         setIsLoadingData(false)
       }
@@ -115,7 +115,7 @@ export default function HistoricoPage() {
         </div>
 
         <div className="bg-card rounded-xl p-6 border border-border">
-          <h1 className="text-2xl font-bold text-card-foreground font-serif">Historico de {selectedPet.nome}</h1>
+          <h1 className="text-2xl font-bold text-card-foreground font-serif">Histórico de {selectedPet.nome}</h1>
           <p className="text-muted-foreground mt-1">Tutor: {selectedPet.tutor}</p>
         </div>
 
@@ -154,7 +154,7 @@ export default function HistoricoPage() {
                             <p className="text-sm text-muted-foreground mt-1">Consulta: {item.consultationReason}</p>
                           )}
                           <p className="text-sm text-muted-foreground mt-1">
-                            Veterinario: {item.veterinarianDisplayName}
+                            Veterinário: {item.veterinarianDisplayName}
                           </p>
                         </div>
                         <span className="text-sm text-muted-foreground whitespace-nowrap">{formatDate(item.data)}</span>
@@ -166,7 +166,7 @@ export default function HistoricoPage() {
             </div>
           </div>
         ) : (
-          <EmptyState text="Este pet ainda nao possui historico medico." />
+          <EmptyState text="Este pet ainda não possui histórico médico." />
         )}
       </div>
     )
@@ -175,9 +175,9 @@ export default function HistoricoPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-foreground font-serif">Historico Medico</h1>
+        <h1 className="text-3xl font-bold text-foreground font-serif">Histórico Médico</h1>
         <p className="text-muted-foreground mt-1">
-          Registros clinicos gerados por consultas, vacinas e exames
+          Registros clínicos gerados por consultas, vacinas e exames
         </p>
         {errorMessage && <p className="mt-2 text-sm text-destructive">{errorMessage}</p>}
       </div>
@@ -219,7 +219,7 @@ export default function HistoricoPage() {
           text={
             searchTerm
               ? "Tente buscar por outro pet ou tutor."
-              : "Nenhum historico clinico real foi registrado ainda."
+              : "Nenhum histórico clínico real foi registrado ainda."
           }
         />
       )}

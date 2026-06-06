@@ -31,6 +31,7 @@ import {
 import { Plus, DollarSign, TrendingUp, TrendingDown, Wallet, ArrowUpRight, ArrowDownRight } from "lucide-react"
 import type { Lancamento } from "@/lib/mock-data"
 
+// TODO: migrar /financeiro para dados reais do Supabase em uma próxima fase.
 const categorias = [
   "Consultas",
   "Vacinas",
@@ -120,7 +121,7 @@ export default function FinanceiroPage() {
         <div>
           <h1 className="text-3xl font-bold text-foreground font-serif">Controle Financeiro</h1>
           <p className="text-muted-foreground mt-1">
-            Gerencie as financas da clinica
+            Gerencie as finanças da clínica
           </p>
         </div>
         <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>

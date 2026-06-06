@@ -136,7 +136,7 @@ export default function AgendaPage() {
         setPets(petsResult)
         setProfiles(profilesResult)
       } catch {
-        addToast("Nao foi possivel carregar a agenda real do Supabase.", "error")
+        addToast("Não foi possível carregar a agenda real do Supabase.", "error")
       } finally {
         setIsLoadingData(false)
       }
@@ -184,7 +184,7 @@ export default function AgendaPage() {
         tipo: "",
       })
     } catch {
-      addToast("Nao foi possivel criar o agendamento.", "error")
+      addToast("Não foi possível criar o agendamento.", "error")
     } finally {
       setIsSaving(false)
     }
@@ -199,7 +199,7 @@ export default function AgendaPage() {
       setSelectedAgendamento((current) => (current ? { ...current, status } : current))
       addToast("Status atualizado com sucesso!")
     } catch {
-      addToast("Nao foi possivel atualizar o status.", "error")
+      addToast("Não foi possível atualizar o status.", "error")
     }
   }
 
@@ -219,9 +219,9 @@ export default function AgendaPage() {
       setSelectedAgendamento((current) =>
         current ? { ...current, veterinarioId: selectedVet?.id || null, veterinario: veterinarianName } : current
       )
-      addToast("Veterinario atribuido com sucesso!")
+      addToast("Veterinário atribuído com sucesso!")
     } catch {
-      addToast("Nao foi possivel atribuir o veterinario.", "error")
+      addToast("Não foi possível atribuir o veterinário.", "error")
     }
   }
 
@@ -236,7 +236,7 @@ export default function AgendaPage() {
 
   const formatMonthYear = () => {
     const months = [
-      "Janeiro", "Fevereiro", "Marco", "Abril", "Maio", "Junho",
+      "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
       "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
     ]
     return `${months[weekDays[0].getMonth()]} ${weekDays[0].getFullYear()}`
@@ -342,7 +342,7 @@ export default function AgendaPage() {
                   <SelectContent>
                     {veterinarios.map((vet) => (
                       <SelectItem key={vet.id} value={vet.id}>
-                        {vet.fullName || "Veterinario sem nome"}
+                        {vet.fullName || "Veterinário sem nome"}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -394,7 +394,7 @@ export default function AgendaPage() {
           return (
             <div key={vet.id} className="flex items-center gap-2">
               <div className={cn("h-3 w-3 rounded-full", vetColors[vetName] || "bg-primary")} />
-              <span className="text-sm text-muted-foreground">{vet.fullName || "Veterinario sem nome"}</span>
+              <span className="text-sm text-muted-foreground">{vet.fullName || "Veterinário sem nome"}</span>
             </div>
           )
         })}
@@ -547,7 +547,7 @@ export default function AgendaPage() {
                       <SelectContent>
                         {veterinarios.map((vet) => (
                           <SelectItem key={vet.id} value={vet.id}>
-                            {vet.fullName || "Veterinario sem nome"}
+                            {vet.fullName || "Veterinário sem nome"}
                           </SelectItem>
                         ))}
                       </SelectContent>

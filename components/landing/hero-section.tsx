@@ -153,7 +153,7 @@ export function HeroSection() {
             asChild
             className="bg-[#AAC9BA] hover:bg-[#AAC9BA]/90 text-[#305165] font-extrabold rounded-full px-6 sm:px-8 h-12 sm:h-14 text-sm sm:text-base shadow-xl shadow-[#AAC9BA]/25 transition-all duration-300 hover:scale-105 hover:shadow-2xl hover:shadow-[#AAC9BA]/30"
           >
-            <a href="#contato">Agendar Consulta</a>
+            <a href="#contato">Contato</a>
           </Button>
           <Button
             size="lg"

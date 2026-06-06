@@ -37,13 +37,13 @@ const especieIcons = {
 }
 
 const especieLabels = {
-  cao: "Cao",
+  cao: "Cão",
   gato: "Gato",
   outro: "Outro",
 }
 
 function calculateAge(dataNascimento: string | null) {
-  if (!dataNascimento) return "Idade nao informada"
+  if (!dataNascimento) return "Idade não informada"
 
   const birthDate = new Date(dataNascimento + "T00:00:00")
   const today = new Date()
@@ -82,7 +82,7 @@ function PetCard({
             {pet.raca} - {especieLabels[pet.especie]}
           </p>
           <p className="text-sm text-muted-foreground mt-1">
-            {pet.peso ? `Peso: ${pet.peso} kg` : "Peso nao informado"}
+            {pet.peso ? `Peso: ${pet.peso} kg` : "Peso não informado"}
           </p>
           <p className="text-sm text-muted-foreground mt-1">{calculateAge(pet.dataNascimento)}</p>
         </div>
@@ -94,7 +94,7 @@ function PetCard({
         </p>
         <div className="flex items-center gap-1 text-sm text-muted-foreground mt-1">
           <Phone className="h-3 w-3" />
-          {pet.telefoneTutor || "Telefone nao informado"}
+          {pet.telefoneTutor || "Telefone não informado"}
         </div>
       </div>
 
@@ -195,7 +195,7 @@ function PetModal({
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-card-foreground mb-1">
-              Tutor responsavel
+              Tutor responsável
             </label>
             <select
               required
@@ -227,7 +227,7 @@ function PetModal({
 
           <div>
             <label className="block text-sm font-medium text-card-foreground mb-1">
-              Especie
+              Espécie
             </label>
             <select
               value={formData.especie}
@@ -239,7 +239,7 @@ function PetModal({
               }
               className="w-full px-3 py-2 border border-input rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
             >
-              <option value="cao">Cao</option>
+              <option value="cao">Cão</option>
               <option value="gato">Gato</option>
               <option value="outro">Outro</option>
             </select>
@@ -247,7 +247,7 @@ function PetModal({
 
           <div>
             <label className="block text-sm font-medium text-card-foreground mb-1">
-              Raca
+              Raça
             </label>
             <input
               type="text"
@@ -374,7 +374,7 @@ export default function PetsPage() {
         setPets(petsResult)
         setProfiles(profilesResult)
       } catch {
-        addToast("Nao foi possivel carregar os pets reais do Supabase.", "error")
+        addToast("Não foi possível carregar os pets reais do Supabase.", "error")
       } finally {
         setIsLoadingData(false)
       }
@@ -419,7 +419,7 @@ export default function PetsPage() {
       }
       handleCloseModal()
     } catch {
-      addToast("Nao foi possivel salvar o pet.", "error")
+      addToast("Não foi possível salvar o pet.", "error")
     }
   }
 
@@ -431,7 +431,7 @@ export default function PetsPage() {
       )
       addToast("Pet arquivado com sucesso!")
     } catch {
-      addToast("Nao foi possivel arquivar o pet.", "error")
+      addToast("Não foi possível arquivar o pet.", "error")
     }
   }
 
@@ -449,7 +449,7 @@ export default function PetsPage() {
         <div>
           <h1 className="text-3xl font-bold text-foreground font-serif">Pets</h1>
           <p className="text-muted-foreground mt-1">
-            Gerencie os pets cadastrados na clinica
+            Gerencie os pets cadastrados na clínica
           </p>
         </div>
         <button
@@ -477,8 +477,8 @@ export default function PetsPage() {
           onChange={(e) => setFilterEspecie(e.target.value)}
           className="px-4 py-2 border border-input rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
         >
-          <option value="todos">Todas as especies</option>
-          <option value="cao">Caes</option>
+          <option value="todos">Todas as espécies</option>
+          <option value="cao">Cães</option>
           <option value="gato">Gatos</option>
           <option value="outro">Outros</option>
         </select>
@@ -504,7 +504,7 @@ export default function PetsPage() {
           <p className="text-muted-foreground mt-1">
             {searchTerm || filterEspecie !== "todos"
               ? "Tente ajustar os filtros de busca"
-              : "Cadastre o primeiro pet da clinica"}
+              : "Cadastre o primeiro pet da clínica"}
           </p>
         </div>
       )}

@@ -125,7 +125,7 @@ export default function TutorPage() {
       ])
 
       if (petsResult.error || agendamentosResult.error || vacinasResult.error || historicoResult.error) {
-        addToast("Nao foi possivel carregar todos os dados do tutor.", "error")
+        addToast("Não foi possível carregar todos os dados do tutor.", "error")
       }
 
       setPets((petsResult.data || []) as PetRow[])
@@ -256,10 +256,10 @@ export default function TutorPage() {
         <section className="rounded-lg border border-[#AAC9BA]/40 bg-white p-6 shadow-sm dark:bg-slate-800">
           <p className="text-sm font-semibold uppercase tracking-wide text-[#5E929F]">Portal do tutor</p>
           <h1 className="mt-2 font-serif text-3xl font-bold text-[#305165] dark:text-white">
-            Ola, {tutorName}
+            Olá, {tutorName}
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-slate-600 dark:text-slate-300">
-            Acompanhe seus pets, solicite agendamentos e consulte vacinas e historico registrados pela clinica.
+            Acompanhe seus pets, solicite agendamentos e consulte vacinas e histórico registrados pela clínica.
           </p>
         </section>
 
@@ -267,7 +267,7 @@ export default function TutorPage() {
           <SummaryCard icon={PawPrint} label="Meus Pets" value={pets.length} />
           <SummaryCard icon={CalendarDays} label="Meus Agendamentos" value={agendamentos.length} />
           <SummaryCard icon={Syringe} label="Vacinas" value={vacinas.length} />
-          <SummaryCard icon={ClipboardList} label="Historico do Pet" value={historico.length} />
+          <SummaryCard icon={ClipboardList} label="Histórico do Pet" value={historico.length} />
         </section>
 
         <section className="grid gap-6 lg:grid-cols-[1fr_420px]">
@@ -278,10 +278,10 @@ export default function TutorPage() {
                   <div key={pet.id} className="rounded-lg border border-border bg-background p-4">
                     <h3 className="font-semibold text-foreground">{pet.nome}</h3>
                     <p className="text-sm text-muted-foreground">
-                      {pet.raca} - {pet.especie === "cao" ? "Cao" : pet.especie === "gato" ? "Gato" : "Outro"}
+                      {pet.raca} - {pet.especie === "cao" ? "Cão" : pet.especie === "gato" ? "Gato" : "Outro"}
                     </p>
                     <p className="mt-2 text-sm text-muted-foreground">
-                      {pet.peso ? `${pet.peso} kg` : "Peso nao informado"}
+                      {pet.peso ? `${pet.peso} kg` : "Peso não informado"}
                     </p>
                   </div>
                 ))}
@@ -296,19 +296,19 @@ export default function TutorPage() {
               <Field label="Nome do pet" value={petForm.nome} onChange={(value) => setPetForm({ ...petForm, nome: value })} required />
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="especie">Especie</Label>
+                  <Label htmlFor="especie">Espécie</Label>
                   <select
                     id="especie"
                     value={petForm.especie}
                     onChange={(event) => setPetForm({ ...petForm, especie: event.target.value as Especie })}
                     className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                   >
-                    <option value="cao">Cao</option>
+                    <option value="cao">Cão</option>
                     <option value="gato">Gato</option>
                     <option value="outro">Outro</option>
                   </select>
                 </div>
-                <Field label="Raca" value={petForm.raca} onChange={(value) => setPetForm({ ...petForm, raca: value })} required />
+                <Field label="Raça" value={petForm.raca} onChange={(value) => setPetForm({ ...petForm, raca: value })} required />
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Nascimento" type="date" value={petForm.data_nascimento} onChange={(value) => setPetForm({ ...petForm, data_nascimento: value })} />
@@ -363,11 +363,11 @@ export default function TutorPage() {
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Data" type="date" value={appointmentForm.data} onChange={(value) => setAppointmentForm({ ...appointmentForm, data: value })} required />
-                <Field label="Horario" type="time" value={appointmentForm.horario_inicio} onChange={(value) => setAppointmentForm({ ...appointmentForm, horario_inicio: value })} required />
+                <Field label="Horário" type="time" value={appointmentForm.horario_inicio} onChange={(value) => setAppointmentForm({ ...appointmentForm, horario_inicio: value })} required />
               </div>
               <Field label="Tipo" value={appointmentForm.tipo} onChange={(value) => setAppointmentForm({ ...appointmentForm, tipo: value })} required />
               <div className="space-y-2">
-                <Label htmlFor="observacoes">Observacoes</Label>
+                <Label htmlFor="observacoes">Observações</Label>
                 <Textarea
                   id="observacoes"
                   value={appointmentForm.observacoes}
@@ -388,7 +388,7 @@ export default function TutorPage() {
             {vacinas.length > 0 ? (
               <div className="space-y-3">
                 {vacinas.map((vacina) => (
-                  <InfoRow key={vacina.id} title={vacina.vacina} subtitle={`${petNameById[vacina.pet_id] || "Pet"} - proxima dose: ${vacina.proxima_dose || "nao definida"}`} />
+                  <InfoRow key={vacina.id} title={vacina.vacina} subtitle={`${petNameById[vacina.pet_id] || "Pet"} - próxima dose: ${vacina.proxima_dose || "não definida"}`} />
                 ))}
               </div>
             ) : (
@@ -396,7 +396,7 @@ export default function TutorPage() {
             )}
           </Panel>
 
-          <Panel title="Historico dos meus Pets" icon={ClipboardList}>
+          <Panel title="Histórico dos meus Pets" icon={ClipboardList}>
             {historico.length > 0 ? (
               <div className="space-y-3">
                 {historico.map((item) => (
@@ -404,7 +404,7 @@ export default function TutorPage() {
                 ))}
               </div>
             ) : (
-              <EmptyState text="Nenhum historico clinico registrado." />
+              <EmptyState text="Nenhum histórico clínico registrado." />
             )}
           </Panel>
         </section>

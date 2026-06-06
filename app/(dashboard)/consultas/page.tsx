@@ -46,7 +46,7 @@ export default function ConsultasPage() {
       try {
         setConsultas(await getAdminConsultations(supabase))
       } catch {
-        setErrorMessage("Nao foi possivel carregar as consultas reais do Supabase.")
+        setErrorMessage("Não foi possível carregar as consultas reais do Supabase.")
       } finally {
         setIsLoadingData(false)
       }
@@ -84,7 +84,7 @@ export default function ConsultasPage() {
       <div>
         <h1 className="text-3xl font-bold text-foreground font-serif">Consultas</h1>
         <p className="text-muted-foreground mt-1">
-          Registros clinicos criados a partir do feedback veterinario
+          Registros clínicos criados a partir do feedback veterinário
         </p>
         {errorMessage && <p className="mt-2 text-sm text-destructive">{errorMessage}</p>}
       </div>
@@ -94,7 +94,7 @@ export default function ConsultasPage() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
           <input
             type="text"
-            placeholder="Buscar por pet, tutor ou veterinario..."
+            placeholder="Buscar por pet, tutor ou veterinário..."
             value={searchTerm}
             onChange={(event) => setSearchTerm(event.target.value)}
             className="w-full pl-10 pr-4 py-2 border border-input rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
@@ -130,7 +130,7 @@ export default function ConsultasPage() {
                   <th className="text-left px-4 py-3 text-sm font-semibold text-card-foreground">Tutor</th>
                   <th className="text-left px-4 py-3 text-sm font-semibold text-card-foreground">Data</th>
                   <th className="text-left px-4 py-3 text-sm font-semibold text-card-foreground hidden md:table-cell">
-                    Veterinario
+                    Veterinário
                   </th>
                   <th className="text-left px-4 py-3 text-sm font-semibold text-card-foreground hidden lg:table-cell">
                     Feedback
@@ -183,7 +183,7 @@ export default function ConsultasPage() {
           <p className="text-muted-foreground mt-1">
             {searchTerm || filterStatus !== "todos" || filterDate
               ? "Tente ajustar os filtros de busca"
-              : "Nenhum feedback veterinario foi registrado ainda"}
+              : "Nenhum feedback veterinário foi registrado ainda"}
           </p>
         </div>
       )}
