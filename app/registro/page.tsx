@@ -1,76 +1,85 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import Link from "next/link"
-import { useRouter } from "next/navigation"
-import { Eye, EyeOff, UserPlus, Loader2, CheckCircle2 } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { useAuth } from "@/context/auth-context"
+import { useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { Eye, EyeOff, UserPlus, Loader2, CheckCircle2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useAuth } from "@/context/auth-context";
 
 export default function RegistroPage() {
-  const [fullName, setFullName] = useState("")
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
-  const [confirmPassword, setConfirmPassword] = useState("")
-  const [showPassword, setShowPassword] = useState(false)
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
-  const [success, setSuccess] = useState(false)
-  const { signUp } = useAuth()
-  const router = useRouter()
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const { signUp } = useAuth();
+  const router = useRouter();
 
   const validateForm = (): string | null => {
     if (fullName.trim().length < 3) {
-      return "O nome deve ter pelo menos 3 caracteres."
+      return "O nome deve ter pelo menos 3 caracteres.";
     }
     if (password.length < 6) {
-      return "A senha deve ter pelo menos 6 caracteres."
+      return "A senha deve ter pelo menos 6 caracteres.";
     }
     if (password !== confirmPassword) {
-      return "As senhas não coincidem."
+      return "As senhas não coincidem.";
     }
-    return null
-  }
+    return null;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError(null)
+    e.preventDefault();
+    setError(null);
 
-    const validationError = validateForm()
+    const validationError = validateForm();
     if (validationError) {
-      setError(validationError)
-      return
+      setError(validationError);
+      return;
     }
 
-    setIsLoading(true)
+    setIsLoading(true);
 
     try {
-      const { error: signUpError, confirmEmail } = await signUp(email, password, fullName.trim())
+      const { error: signUpError, confirmEmail } = await signUp(
+        email,
+        password,
+        fullName.trim(),
+      );
 
       if (signUpError) {
+        console.error("Erro real ao criar conta:", signUpError);
+
         if (signUpError.message.includes("already registered")) {
-          setError("Este e-mail já está cadastrado. Tente fazer login.")
+          setError("Este e-mail já está cadastrado. Tente fazer login.");
         } else {
-          setError("Erro ao criar conta. Tente novamente.")
+          setError(
+            signUpError.message || "Erro ao criar conta. Tente novamente.",
+          );
         }
-        return
+
+        return;
       }
 
       if (confirmEmail) {
-        setSuccess(true)
+        setSuccess(true);
       } else {
-        router.push("/tutor")
-        router.refresh()
+        router.push("/tutor");
+        router.refresh();
       }
     } catch {
-      setError("Erro inesperado. Tente novamente mais tarde.")
+      setError("Erro inesperado. Tente novamente mais tarde.");
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
+  };
 
   // Success state — email confirmation required
   if (success) {
@@ -84,7 +93,10 @@ export default function RegistroPage() {
 
         <div className="w-full max-w-md relative z-10">
           <div className="flex justify-center mb-8">
-            <Link href="/" className="transition-transform duration-300 hover:scale-105">
+            <Link
+              href="/"
+              className="transition-transform duration-300 hover:scale-105"
+            >
               <img
                 src="/logo-transparent.png"
                 alt="Woofy Logo"
@@ -103,8 +115,12 @@ export default function RegistroPage() {
               Conta criada!
             </h2>
             <p className="text-sm text-[#5E929F] dark:text-[#AAC9BA] leading-relaxed mb-6">
-              Enviamos um link de confirmação para <strong className="text-[#305165] dark:text-white">{email}</strong>. 
-              Verifique sua caixa de entrada e clique no link para ativar sua conta.
+              Enviamos um link de confirmação para{" "}
+              <strong className="text-[#305165] dark:text-white">
+                {email}
+              </strong>
+              . Verifique sua caixa de entrada e clique no link para ativar sua
+              conta.
             </p>
             <Button
               asChild
@@ -115,7 +131,7 @@ export default function RegistroPage() {
           </div>
         </div>
       </div>
-    )
+    );
   }
 
   return (
@@ -130,7 +146,10 @@ export default function RegistroPage() {
       <div className="w-full max-w-md relative z-10">
         {/* Logo */}
         <div className="flex justify-center mb-8">
-          <Link href="/" className="transition-transform duration-300 hover:scale-105">
+          <Link
+            href="/"
+            className="transition-transform duration-300 hover:scale-105"
+          >
             <img
               src="/logo-pet-shop.png"
               alt="Woofy Logo"
@@ -154,13 +173,18 @@ export default function RegistroPage() {
             {/* Error message */}
             {error && (
               <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/50 rounded-xl p-4 animate-in fade-in slide-in-from-top-2 duration-300">
-                <p className="text-sm text-red-600 dark:text-red-400 text-center">{error}</p>
+                <p className="text-sm text-red-600 dark:text-red-400 text-center">
+                  {error}
+                </p>
               </div>
             )}
 
             {/* Full Name field */}
             <div className="space-y-2">
-              <Label htmlFor="register-name" className="text-[#305165] dark:text-gray-200 font-medium">
+              <Label
+                htmlFor="register-name"
+                className="text-[#305165] dark:text-gray-200 font-medium"
+              >
                 Nome completo
               </Label>
               <Input
@@ -177,7 +201,10 @@ export default function RegistroPage() {
 
             {/* Email field */}
             <div className="space-y-2">
-              <Label htmlFor="register-email" className="text-[#305165] dark:text-gray-200 font-medium">
+              <Label
+                htmlFor="register-email"
+                className="text-[#305165] dark:text-gray-200 font-medium"
+              >
                 E-mail
               </Label>
               <Input
@@ -194,7 +221,10 @@ export default function RegistroPage() {
 
             {/* Password field */}
             <div className="space-y-2">
-              <Label htmlFor="register-password" className="text-[#305165] dark:text-gray-200 font-medium">
+              <Label
+                htmlFor="register-password"
+                className="text-[#305165] dark:text-gray-200 font-medium"
+              >
                 Senha
               </Label>
               <div className="relative">
@@ -215,14 +245,21 @@ export default function RegistroPage() {
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-[#AAC9BA] hover:text-[#5E929F] dark:text-slate-400 dark:hover:text-slate-200 transition-colors"
                   aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
                 >
-                  {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                  {showPassword ? (
+                    <EyeOff className="h-5 w-5" />
+                  ) : (
+                    <Eye className="h-5 w-5" />
+                  )}
                 </button>
               </div>
             </div>
 
             {/* Confirm Password field */}
             <div className="space-y-2">
-              <Label htmlFor="register-confirm-password" className="text-[#305165] dark:text-gray-200 font-medium">
+              <Label
+                htmlFor="register-confirm-password"
+                className="text-[#305165] dark:text-gray-200 font-medium"
+              >
                 Confirmar senha
               </Label>
               <div className="relative">
@@ -241,9 +278,15 @@ export default function RegistroPage() {
                   type="button"
                   onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-[#AAC9BA] hover:text-[#5E929F] dark:text-slate-400 dark:hover:text-slate-200 transition-colors"
-                  aria-label={showConfirmPassword ? "Ocultar senha" : "Mostrar senha"}
+                  aria-label={
+                    showConfirmPassword ? "Ocultar senha" : "Mostrar senha"
+                  }
                 >
-                  {showConfirmPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                  {showConfirmPassword ? (
+                    <EyeOff className="h-5 w-5" />
+                  ) : (
+                    <Eye className="h-5 w-5" />
+                  )}
                 </button>
               </div>
             </div>
@@ -305,5 +348,5 @@ export default function RegistroPage() {
         </div>
       </div>
     </div>
-  )
+  );
 }

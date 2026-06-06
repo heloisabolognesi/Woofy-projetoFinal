@@ -102,25 +102,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: null, profile: signedInProfile }
   }
 
-  const signUp = async (email: string, password: string, fullName: string) => {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          full_name: fullName,
-          role: defaultRole,
-        },
+const signUp = async (email: string, password: string, fullName: string) => {
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      data: {
+        full_name: fullName,
       },
-    })
+    },
+  })
 
-    if (!error && data.user && !data.session) {
-      // Email confirmation is required
-      return { error: null, confirmEmail: true }
-    }
-
-    return { error }
+  if (error) {
+    console.error("Supabase signUp error:", error)
+    return { error, confirmEmail: false }
   }
+
+  console.log("Supabase signUp success:", data)
+
+  if (data.user && !data.session) {
+    return { error: null, confirmEmail: true }
+  }
+
+  return { error: null, confirmEmail: false }
+}
 
   const signOut = async () => {
     await supabase.auth.signOut()
