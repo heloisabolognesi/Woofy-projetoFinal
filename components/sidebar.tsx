@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import {
   LayoutDashboard,
   PawPrint,
@@ -11,15 +11,19 @@ import {
   DollarSign,
   CalendarDays,
   Home,
+  LogOut,
   Menu,
+  UserCheck,
   X,
 } from "lucide-react"
 import { useState } from "react"
 import { cn } from "@/lib/utils"
+import { useAuth } from "@/context/auth-context"
 
 const navItems = [
   { href: "/", label: "Voltar ao site", icon: Home },
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/dashboard/aprovacoes", label: "Aprovações", icon: UserCheck },
   { href: "/pets", label: "Pets", icon: PawPrint },
   { href: "/consultas", label: "Consultas", icon: Stethoscope },
   { href: "/vacinacao", label: "Vacinação", icon: Syringe },
@@ -30,7 +34,15 @@ const navItems = [
 
 export function Sidebar() {
   const pathname = usePathname()
+  const router = useRouter()
+  const { signOut } = useAuth()
   const [mobileOpen, setMobileOpen] = useState(false)
+
+  async function handleSignOut() {
+    await signOut()
+    setMobileOpen(false)
+    router.replace("/")
+  }
 
   return (
     <>
@@ -88,6 +100,14 @@ export function Sidebar() {
               </Link>
             )
           })}
+          <button
+            type="button"
+            onClick={handleSignOut}
+            className="mt-3 flex items-center gap-3 rounded-lg px-4 py-3 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+          >
+            <LogOut className="h-5 w-5" />
+            <span className="font-medium">Sair</span>
+          </button>
         </div>
       </nav>
 
@@ -137,6 +157,14 @@ export function Sidebar() {
               <p className="text-xs text-sidebar-foreground/60">Clinica Veterinaria</p>
             </div>
           </div>
+          <button
+            type="button"
+            onClick={handleSignOut}
+            className="mt-3 flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+          >
+            <LogOut className="h-5 w-5" />
+            <span className="font-medium">Sair</span>
+          </button>
         </div>
       </aside>
     </>

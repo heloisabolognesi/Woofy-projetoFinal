@@ -1,7 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
+import { useRouter } from "next/navigation"
 import { useApp } from "@/context/app-context"
+import { useAuth } from "@/context/auth-context"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -28,91 +30,129 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Plus, DollarSign, TrendingUp, TrendingDown, Wallet, ArrowUpRight, ArrowDownRight } from "lucide-react"
-import type { Lancamento } from "@/lib/mock-data"
+import { createClient } from "@/lib/supabase"
+import {
+  calculateFinancialSummary,
+  createFinancialEntry,
+  getAdminFinancialEntries,
+  type AdminFinancialEntry,
+  type FinancialEntryType,
+} from "@/lib/clinic-data"
+import { Plus, DollarSign, TrendingUp, TrendingDown, Wallet, ArrowUpRight, ArrowDownRight, Loader2 } from "lucide-react"
 
-// TODO: migrar /financeiro para dados reais do Supabase em uma próxima fase.
 const categorias = [
   "Consultas",
   "Vacinas",
   "Cirurgias",
   "Exames",
   "Medicamentos",
-  "Estetica",
+  "Estética",
   "Aluguel",
   "Utilidades",
-  "Salarios",
+  "Salários",
   "Outros",
 ]
 
 export default function FinanceiroPage() {
-  const { lancamentos, setLancamentos, addToast } = useApp()
+  const { addToast } = useApp()
+  const { user, loading, refreshProfile } = useAuth()
+  const router = useRouter()
+  const supabase = useMemo(() => createClient(), [])
+  const [lancamentos, setLancamentos] = useState<AdminFinancialEntry[]>([])
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [isLoadingData, setIsLoadingData] = useState(true)
+  const [isSaving, setIsSaving] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     descricao: "",
-    tipo: "entrada" as "entrada" | "saida",
+    tipo: "entrada" as FinancialEntryType,
     valor: "",
     data: "",
     categoria: "",
   })
 
-  const now = new Date()
-  const currentMonth = now.getMonth()
-  const currentYear = now.getFullYear()
+  useEffect(() => {
+    async function loadFinancialData() {
+      if (loading) return
+      if (!user) {
+        router.replace("/login?redirect=/financeiro")
+        return
+      }
 
-  const lancamentosMes = lancamentos.filter((l) => {
-    const data = new Date(l.data)
-    return data.getMonth() === currentMonth && data.getFullYear() === currentYear
-  })
+      setIsLoadingData(true)
+      setLoadError(null)
+      await refreshProfile(user.id)
 
-  const receitaTotal = lancamentosMes
-    .filter((l) => l.tipo === "entrada")
-    .reduce((acc, l) => acc + l.valor, 0)
-
-  const despesasTotal = lancamentosMes
-    .filter((l) => l.tipo === "saida")
-    .reduce((acc, l) => acc + l.valor, 0)
-
-  const lucroLiquido = receitaTotal - despesasTotal
-
-  const sortedLancamentos = [...lancamentos].sort(
-    (a, b) => new Date(b.data).getTime() - new Date(a.data).getTime()
-  )
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-
-    const newLancamento: Lancamento = {
-      id: Math.random().toString(36).substring(7),
-      descricao: formData.descricao,
-      tipo: formData.tipo,
-      valor: parseFloat(formData.valor),
-      data: formData.data,
-      categoria: formData.categoria,
+      try {
+        setLancamentos(await getAdminFinancialEntries(supabase))
+      } catch {
+        setLoadError("Não foi possível carregar os lançamentos financeiros reais do Supabase.")
+      } finally {
+        setIsLoadingData(false)
+      }
     }
 
-    setLancamentos((prev) => [...prev, newLancamento])
-    addToast("Lancamento registrado com sucesso!")
-    setIsModalOpen(false)
-    setFormData({
-      descricao: "",
-      tipo: "entrada",
-      valor: "",
-      data: "",
-      categoria: "",
-    })
+    loadFinancialData()
+  }, [loading, refreshProfile, router, supabase, user])
+
+  const { receitaMes, despesasMes, lucroLiquido } = calculateFinancialSummary(lancamentos)
+  const sortedLancamentos = [...lancamentos]
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!user) return
+
+    const valor = Number(formData.valor)
+    if (!Number.isFinite(valor) || valor <= 0) {
+      addToast("Informe um valor válido para o lançamento.", "error")
+      return
+    }
+
+    setIsSaving(true)
+    try {
+      const newLancamento = await createFinancialEntry(supabase, {
+        userId: user.id,
+        descricao: formData.descricao.trim(),
+        tipo: formData.tipo,
+        valor,
+        data: formData.data,
+        categoria: formData.categoria,
+      })
+      setLancamentos((prev) => [newLancamento, ...prev])
+      addToast("Lançamento registrado com sucesso!")
+      setIsModalOpen(false)
+      setFormData({
+        descricao: "",
+        tipo: "entrada",
+        valor: "",
+        data: "",
+        categoria: "",
+      })
+    } catch {
+      addToast("Não foi possível registrar o lançamento financeiro.", "error")
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const formatCurrency = (value: number) => {
-    return value.toLocaleString("pt-BR", {
+    return new Intl.NumberFormat("pt-BR", {
       style: "currency",
       currency: "BRL",
-    })
+    }).format(value)
   }
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString + "T00:00:00")
     return date.toLocaleDateString("pt-BR")
+  }
+
+  if (loading || isLoadingData) {
+    return (
+      <div className="flex min-h-[360px] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    )
   }
 
   return (
@@ -123,26 +163,27 @@ export default function FinanceiroPage() {
           <p className="text-muted-foreground mt-1">
             Gerencie as finanças da clínica
           </p>
+          {loadError && <p className="mt-2 text-sm text-destructive">{loadError}</p>}
         </div>
         <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
           <DialogTrigger asChild>
             <Button>
               <Plus className="h-4 w-4 mr-2" />
-              Novo Lancamento
+              Novo Lançamento
             </Button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-[500px]">
             <DialogHeader>
-              <DialogTitle className="font-serif">Registrar Lancamento</DialogTitle>
+              <DialogTitle className="font-serif">Registrar Lançamento</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4 mt-4">
               <div className="space-y-2">
-                <Label htmlFor="descricao">Descricao</Label>
+                <Label htmlFor="descricao">Descrição</Label>
                 <Input
                   id="descricao"
                   value={formData.descricao}
                   onChange={(e) => setFormData({ ...formData, descricao: e.target.value })}
-                  placeholder="Ex: Consulta - Thor, Compra de medicamentos..."
+                  placeholder="Ex: Consulta, compra de medicamentos..."
                   required
                 />
               </div>
@@ -152,7 +193,7 @@ export default function FinanceiroPage() {
                   <Label htmlFor="tipo">Tipo</Label>
                   <Select
                     value={formData.tipo}
-                    onValueChange={(value: "entrada" | "saida") =>
+                    onValueChange={(value: FinancialEntryType) =>
                       setFormData({ ...formData, tipo: value })
                     }
                   >
@@ -161,7 +202,7 @@ export default function FinanceiroPage() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="entrada">Entrada</SelectItem>
-                      <SelectItem value="saida">Saida</SelectItem>
+                      <SelectItem value="saida">Saída</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -213,7 +254,9 @@ export default function FinanceiroPage() {
                 <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
                   Cancelar
                 </Button>
-                <Button type="submit">Registrar</Button>
+                <Button type="submit" disabled={isSaving}>
+                  {isSaving ? "Registrando..." : "Registrar"}
+                </Button>
               </div>
             </form>
           </DialogContent>
@@ -224,9 +267,9 @@ export default function FinanceiroPage() {
         <div className="bg-card rounded-xl p-5 border border-border">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-muted-foreground">Receita do Mes</p>
+              <p className="text-sm text-muted-foreground">Receita do Mês</p>
               <p className="text-2xl font-bold text-woofy-accent mt-1">
-                {formatCurrency(receitaTotal)}
+                {formatCurrency(receitaMes)}
               </p>
             </div>
             <div className="h-12 w-12 rounded-lg bg-woofy-accent/20 flex items-center justify-center">
@@ -238,9 +281,9 @@ export default function FinanceiroPage() {
         <div className="bg-card rounded-xl p-5 border border-border">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-muted-foreground">Despesas do Mes</p>
+              <p className="text-sm text-muted-foreground">Despesas do Mês</p>
               <p className="text-2xl font-bold text-destructive mt-1">
-                {formatCurrency(despesasTotal)}
+                {formatCurrency(despesasMes)}
               </p>
             </div>
             <div className="h-12 w-12 rounded-lg bg-destructive/10 flex items-center justify-center">
@@ -252,7 +295,7 @@ export default function FinanceiroPage() {
         <div className="bg-card rounded-xl p-5 border border-border">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-muted-foreground">Lucro Liquido</p>
+              <p className="text-sm text-muted-foreground">Lucro Líquido</p>
               <p
                 className={`text-2xl font-bold mt-1 ${
                   lucroLiquido >= 0 ? "text-primary" : "text-destructive"
@@ -273,7 +316,7 @@ export default function FinanceiroPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Descricao</TableHead>
+                <TableHead>Descrição</TableHead>
                 <TableHead>Tipo</TableHead>
                 <TableHead>Valor</TableHead>
                 <TableHead>Data</TableHead>
@@ -297,7 +340,7 @@ export default function FinanceiroPage() {
                       ) : (
                         <ArrowDownRight className="h-3 w-3 mr-1" />
                       )}
-                      {lancamento.tipo === "entrada" ? "Entrada" : "Saida"}
+                      {lancamento.tipo === "entrada" ? "Entrada" : "Saída"}
                     </Badge>
                   </TableCell>
                   <TableCell
@@ -318,9 +361,9 @@ export default function FinanceiroPage() {
       ) : (
         <div className="text-center py-12">
           <DollarSign className="h-16 w-16 mx-auto text-muted-foreground/50 mb-4" />
-          <h3 className="text-lg font-medium text-foreground">Nenhum lancamento registrado</h3>
+          <h3 className="text-lg font-medium text-foreground">Nenhum lançamento financeiro registrado.</h3>
           <p className="text-muted-foreground mt-1">
-            Comece registrando o primeiro lancamento financeiro
+            Os totais permanecem zerados até que existam lançamentos reais.
           </p>
         </div>
       )}

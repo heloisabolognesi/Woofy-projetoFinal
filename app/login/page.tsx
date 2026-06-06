@@ -17,11 +17,12 @@ function LoginForm() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
-  const { signIn } = useAuth()
+  const { signIn, signOut } = useAuth()
   const { theme, setTheme } = useTheme()
   const router = useRouter()
   const searchParams = useSearchParams()
   const redirect = searchParams.get("redirect")
+  const approvalError = searchParams.get("approval")
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -35,10 +36,22 @@ function LoginForm() {
         if (signInError.message.includes("Invalid login credentials")) {
           setError("E-mail ou senha incorretos. Tente novamente.")
         } else if (signInError.message.includes("Email not confirmed")) {
-          setError("Confirme seu e-mail antes de fazer login. Verifique sua caixa de entrada.")
+          setError("Não foi possível fazer login. Verifique se sua conta já foi aprovada pela clínica.")
         } else {
-          setError("Erro ao fazer login. Tente novamente.")
+          setError(signInError.message || "Erro ao fazer login. Tente novamente.")
         }
+        return
+      }
+
+      if (!profile || profile.approval_status === "pending") {
+        router.push("/aguardando-aprovacao")
+        router.refresh()
+        return
+      }
+
+      if (profile.approval_status === "rejected") {
+        await signOut()
+        setError("Seu acesso não foi aprovado. Entre em contato com a clínica.")
         return
       }
 
@@ -97,9 +110,11 @@ function LoginForm() {
 
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Error message */}
-            {error && (
+            {(error || approvalError === "rejected") && (
               <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/50 rounded-xl p-4 animate-in fade-in slide-in-from-top-2 duration-300">
-                <p className="text-sm text-red-600 dark:text-red-400 text-center">{error}</p>
+                <p className="text-sm text-red-600 dark:text-red-400 text-center">
+                  {error || "Seu acesso não foi aprovado. Entre em contato com a clínica."}
+                </p>
               </div>
             )}
 

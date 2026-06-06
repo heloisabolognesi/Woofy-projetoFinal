@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Eye, EyeOff, UserPlus, Loader2, CheckCircle2, Moon, Sun } from "lucide-react";
+import { Eye, EyeOff, UserPlus, Loader2, Moon, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,7 +19,6 @@ export default function RegistroPage() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [success, setSuccess] = useState(false);
   const { signUp } = useAuth();
   const { theme, setTheme } = useTheme();
   const router = useRouter();
@@ -50,7 +49,7 @@ export default function RegistroPage() {
     setIsLoading(true);
 
     try {
-      const { error: signUpError, confirmEmail } = await signUp(
+      const { error: signUpError } = await signUp(
         email,
         password,
         fullName.trim(),
@@ -70,83 +69,14 @@ export default function RegistroPage() {
         return;
       }
 
-      if (confirmEmail) {
-        setSuccess(true);
-      } else {
-        router.push("/tutor");
-        router.refresh();
-      }
+      router.push("/aguardando-aprovacao");
+      router.refresh();
     } catch {
       setError("Erro inesperado. Tente novamente mais tarde.");
     } finally {
       setIsLoading(false);
     }
   };
-
-  // Success state — email confirmation required
-  if (success) {
-    return (
-      <div className="min-h-screen bg-[#F5F4EE] dark:bg-slate-900 flex items-center justify-center p-4 transition-colors duration-300">
-        {/* Decorative background elements */}
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute -top-40 -right-40 w-80 h-80 bg-[#AAC9BA]/20 rounded-full blur-3xl" />
-          <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-[#5E929F]/15 rounded-full blur-3xl" />
-        </div>
-
-        <div className="w-full max-w-md relative z-10">
-          <div className="mb-4 flex justify-end">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              className="rounded-full text-[#305165] hover:bg-[#AAC9BA]/15 dark:text-gray-200 dark:hover:bg-slate-800"
-              aria-label="Alternar tema"
-            >
-              {theme === "dark" ? <Sun className="h-5 w-5 text-yellow-400" /> : <Moon className="h-5 w-5" />}
-            </Button>
-          </div>
-          <div className="flex justify-center mb-8">
-            <Link
-              href="/"
-              className="transition-transform duration-300 hover:scale-105"
-            >
-              <img
-                src="/logo-transparent.png"
-                alt="Woofy Logo"
-                className="h-20 w-auto object-contain"
-              />
-            </Link>
-          </div>
-
-          <div className="bg-white/95 dark:bg-slate-800/95 backdrop-blur-xl rounded-2xl shadow-xl border border-gray-100/50 dark:border-slate-700/50 p-8 text-center">
-            <div className="flex justify-center mb-4">
-              <div className="p-4 bg-gradient-to-br from-[#AAC9BA]/30 to-[#AAC9BA]/10 rounded-2xl">
-                <CheckCircle2 className="h-12 w-12 text-[#5E929F]" />
-              </div>
-            </div>
-            <h2 className="text-2xl font-bold text-[#305165] dark:text-white font-serif mb-3">
-              Conta criada!
-            </h2>
-            <p className="text-sm text-[#5E929F] dark:text-[#AAC9BA] leading-relaxed mb-6">
-              Enviamos um link de confirmação para{" "}
-              <strong className="text-[#305165] dark:text-white">
-                {email}
-              </strong>
-              . Verifique sua caixa de entrada e clique no link para ativar sua
-              conta.
-            </p>
-            <Button
-              asChild
-              className="w-full h-12 rounded-full bg-gradient-to-r from-[#305165] to-[#5E929F] text-white font-bold text-base shadow-lg shadow-[#5E929F]/20 transition-all duration-300 hover:scale-[1.02] hover:shadow-xl"
-            >
-              <Link href="/login">Ir para o Login</Link>
-            </Button>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-[#F5F4EE] dark:bg-slate-900 flex items-center justify-center p-4 transition-colors duration-300">

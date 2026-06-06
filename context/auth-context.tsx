@@ -2,13 +2,20 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
 import { createClient } from "@/lib/supabase"
-import { defaultRole, type UserRole } from "@/lib/auth-routes"
+import { type ApprovalStatus, type UserRole } from "@/lib/auth-routes"
 import type { User, AuthError } from "@supabase/supabase-js"
 
 interface Profile {
   id: string
   full_name: string | null
   role: UserRole
+  email: string | null
+  approval_status: ApprovalStatus
+  approved_at: string | null
+  approved_by: string | null
+  rejected_at: string | null
+  rejected_by: string | null
+  rejection_reason: string | null
   avatar_url: string | null
   created_at: string
   updated_at: string
@@ -20,7 +27,7 @@ interface AuthContextType {
   loading: boolean
   refreshProfile: (userId?: string) => Promise<Profile | null>
   signIn: (email: string, password: string) => Promise<{ error: AuthError | null; profile: Profile | null }>
-  signUp: (email: string, password: string, fullName: string) => Promise<{ error: AuthError | null; confirmEmail?: boolean }>
+  signUp: (email: string, password: string, fullName: string) => Promise<{ error: AuthError | null }>
   signOut: () => Promise<void>
 }
 
@@ -101,30 +108,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: null, profile: signedInProfile }
   }
 
-const signUp = async (email: string, password: string, fullName: string) => {
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      data: {
-        full_name: fullName,
+  const signUp = async (email: string, password: string, fullName: string) => {
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name: fullName,
+        },
       },
-    },
-  })
+    })
 
-  if (error) {
-    console.error("Supabase signUp error:", error)
-    return { error, confirmEmail: false }
+    if (error) {
+      console.error("Supabase signUp error:", error)
+      return { error }
+    }
+
+    return { error: null }
   }
-
-  console.log("Supabase signUp success:", data)
-
-  if (data.user && !data.session) {
-    return { error: null, confirmEmail: true }
-  }
-
-  return { error: null, confirmEmail: false }
-}
 
   const signOut = async () => {
     await supabase.auth.signOut()

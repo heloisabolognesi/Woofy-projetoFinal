@@ -5,7 +5,15 @@ import { useRouter } from "next/navigation"
 import { PawPrint, Stethoscope, Syringe, DollarSign, Clock, Calendar, Loader2 } from "lucide-react"
 import { createClient } from "@/lib/supabase"
 import { useAuth } from "@/context/auth-context"
-import { getAdminUpcomingAppointments, type AdminAppointment } from "@/lib/clinic-data"
+import {
+  calculateFinancialSummary,
+  getAdminConsultationWeekdayStats,
+  getAdminFinancialEntries,
+  getAdminUpcomingAppointments,
+  type AdminAppointment,
+  type AdminConsultationWeekdayStat,
+  type AdminFinancialEntry,
+} from "@/lib/clinic-data"
 import {
   BarChart,
   Bar,
@@ -89,19 +97,13 @@ interface VacinaRow {
   proxima_dose: string | null
 }
 
-interface LancamentoRow {
-  id: string
-  tipo: "entrada" | "saida"
-  valor: number
-  data: string
-}
-
 interface AdminDashboardData {
   pets: PetRow[]
   proximosAgendamentos: AdminAppointment[]
   consultas: ConsultaRow[]
   vacinas: VacinaRow[]
-  lancamentos: LancamentoRow[]
+  lancamentos: AdminFinancialEntry[]
+  consultasPorDia: AdminConsultationWeekdayStat[]
 }
 
 export default function DashboardPage() {
@@ -114,6 +116,7 @@ export default function DashboardPage() {
     consultas: [],
     vacinas: [],
     lancamentos: [],
+    consultasPorDia: [],
   })
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -133,15 +136,23 @@ export default function DashboardPage() {
       await refreshProfile(user.id)
 
       try {
-        const [petsResult, proximosAgendamentosResult, consultasResult, vacinasResult, lancamentosResult] = await Promise.all([
+        const [
+          petsResult,
+          proximosAgendamentosResult,
+          consultasResult,
+          vacinasResult,
+          lancamentosResult,
+          consultasPorDiaResult,
+        ] = await Promise.all([
           supabase.from("pets").select("id,nome,arquivado").order("created_at", { ascending: false }),
           getAdminUpcomingAppointments(supabase),
           supabase.from("consultas").select("id,data,status").order("data", { ascending: false }),
           supabase.from("vacinas").select("id,proxima_dose").order("proxima_dose", { ascending: true }),
-          supabase.from("lancamentos").select("id,tipo,valor,data").order("data", { ascending: false }),
+          getAdminFinancialEntries(supabase),
+          getAdminConsultationWeekdayStats(supabase),
         ])
 
-        const error = petsResult.error || consultasResult.error || vacinasResult.error || lancamentosResult.error
+        const error = petsResult.error || consultasResult.error || vacinasResult.error
         if (error) {
           setLoadError("Não foi possível carregar todos os indicadores reais do Supabase.")
         }
@@ -152,7 +163,8 @@ export default function DashboardPage() {
           proximosAgendamentos: proximosAgendamentosResult,
           consultas: (consultasResult.data || []) as ConsultaRow[],
           vacinas: (vacinasResult.data || []) as VacinaRow[],
-          lancamentos: (lancamentosResult.data || []) as LancamentoRow[],
+          lancamentos: lancamentosResult,
+          consultasPorDia: consultasPorDiaResult,
         })
       } catch {
         setLoadError("Não foi possível carregar todos os indicadores reais do Supabase.")
@@ -177,28 +189,11 @@ export default function DashboardPage() {
     return diffDays <= 30
   }).length
 
-  const receitaMes = data.lancamentos
-    .filter((l) => {
-      const data = new Date(l.data)
-      const now = new Date()
-      return (
-        l.tipo === "entrada" &&
-        data.getMonth() === now.getMonth() &&
-        data.getFullYear() === now.getFullYear()
-      )
-    })
-    .reduce((acc, l) => acc + l.valor, 0)
-
+  const { receitaMes } = calculateFinancialSummary(data.lancamentos)
   const proximosAgendamentos = data.proximosAgendamentos
-
-  const chartData = [
-    { name: "Seg", consultas: 8 },
-    { name: "Ter", consultas: 12 },
-    { name: "Qua", consultas: 10 },
-    { name: "Qui", consultas: 15 },
-    { name: "Sex", consultas: 11 },
-    { name: "Sab", consultas: 6 },
-  ]
+  const hasConsultationChartData = data.consultasPorDia.some((item) => item.consultas > 0)
+  const formatCurrency = (value: number) =>
+    new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value)
 
   if (isLoading) {
     return (
@@ -239,7 +234,7 @@ export default function DashboardPage() {
         />
         <StatCard
           title="Receita do Mês"
-          value={`R$ ${receitaMes.toLocaleString("pt-BR")}`}
+          value={formatCurrency(receitaMes)}
           icon={DollarSign}
           color="bg-woofy-accent"
         />
@@ -253,25 +248,29 @@ export default function DashboardPage() {
               Consultas por Dia da Semana
             </h2>
           </div>
-          <p className="mb-3 text-xs text-muted-foreground">
-            TODO: substituir este gráfico por agregação real de consultas quando a etapa analítica for implementada.
-          </p>
           <div className="h-[250px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="name" stroke="var(--muted-foreground)" fontSize={12} />
-                <YAxis stroke="var(--muted-foreground)" fontSize={12} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "var(--card)",
-                    border: "1px solid var(--border)",
-                    borderRadius: "8px",
-                  }}
-                />
-                <Bar dataKey="consultas" fill="var(--primary)" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            {hasConsultationChartData ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={data.consultasPorDia}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                  <XAxis dataKey="name" stroke="var(--muted-foreground)" fontSize={12} />
+                  <YAxis allowDecimals={false} stroke="var(--muted-foreground)" fontSize={12} />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: "var(--card)",
+                      border: "1px solid var(--border)",
+                      borderRadius: "8px",
+                    }}
+                  />
+                  <Bar dataKey="consultas" fill="var(--primary)" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex h-full flex-col items-center justify-center text-center text-muted-foreground">
+                <Stethoscope className="mb-3 h-12 w-12 opacity-50" />
+                <p>Ainda não há consultas suficientes para gerar o gráfico.</p>
+              </div>
+            )}
           </div>
         </div>
 

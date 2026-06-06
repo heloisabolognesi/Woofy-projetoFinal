@@ -1,4 +1,5 @@
 import type { createClient } from "@/lib/supabase"
+import type { ApprovalStatus, UserRole } from "@/lib/auth-routes"
 
 type SupabaseBrowserClient = ReturnType<typeof createClient>
 
@@ -71,10 +72,72 @@ interface HistoricoRow {
   created_at: string
 }
 
+interface LancamentoRow {
+  id: string
+  user_id: string
+  descricao: string
+  tipo: FinancialEntryType
+  valor: number
+  data: string
+  categoria: string
+  created_at: string
+}
+
 interface ProfileRow {
   id: string
   full_name: string | null
-  role: "tutor" | "veterinario" | "admin"
+  role: UserRole
+}
+
+interface ApprovalProfileRow {
+  id: string
+  full_name: string | null
+  email: string | null
+  role: UserRole
+  approval_status: ApprovalStatus
+  created_at: string
+}
+
+export type FinancialEntryType = "entrada" | "saida"
+
+export interface AdminConsultationWeekdayStat {
+  name: string
+  consultas: number
+}
+
+export interface AdminFinancialEntry {
+  id: string
+  userId: string
+  descricao: string
+  tipo: FinancialEntryType
+  valor: number
+  data: string
+  categoria: string
+  createdAt: string
+}
+
+export interface CreateFinancialEntryInput {
+  userId: string
+  descricao: string
+  tipo: FinancialEntryType
+  valor: number
+  data: string
+  categoria: string
+}
+
+export interface FinancialSummary {
+  receitaMes: number
+  despesasMes: number
+  lucroLiquido: number
+}
+
+export interface PendingProfile {
+  id: string
+  fullName: string | null
+  email: string | null
+  role: UserRole
+  approvalStatus: ApprovalStatus
+  createdAt: string
 }
 
 export interface AdminPet {
@@ -374,6 +437,30 @@ function mapHistoryEntry(
   }
 }
 
+function mapFinancialEntry(row: LancamentoRow): AdminFinancialEntry {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    descricao: row.descricao,
+    tipo: row.tipo,
+    valor: Number(row.valor),
+    data: row.data,
+    categoria: row.categoria,
+    createdAt: row.created_at,
+  }
+}
+
+function mapPendingProfile(row: ApprovalProfileRow): PendingProfile {
+  return {
+    id: row.id,
+    fullName: row.full_name,
+    email: row.email,
+    role: row.role,
+    approvalStatus: row.approval_status,
+    createdAt: row.created_at,
+  }
+}
+
 async function getProfilesByIds(client: SupabaseBrowserClient, ids: string[]) {
   const uniqueIds = [...new Set(ids)].filter(Boolean)
   if (uniqueIds.length === 0) return {}
@@ -400,6 +487,67 @@ export async function getClinicProfiles(client: SupabaseBrowserClient) {
     fullName: profile.full_name,
     role: profile.role,
   }))
+}
+
+export async function getPendingProfiles(client: SupabaseBrowserClient) {
+  const { data, error } = await client
+    .from("profiles")
+    .select("id,full_name,email,role,approval_status,created_at")
+    .eq("approval_status", "pending")
+    .order("created_at", { ascending: true })
+
+  if (error) throw error
+
+  return ((data || []) as ApprovalProfileRow[]).map(mapPendingProfile)
+}
+
+export async function approveProfile(client: SupabaseBrowserClient, profileId: string, adminId: string) {
+  const { error } = await client
+    .from("profiles")
+    .update({
+      approval_status: "approved",
+      approved_at: new Date().toISOString(),
+      approved_by: adminId,
+      rejected_at: null,
+      rejected_by: null,
+      rejection_reason: null,
+    })
+    .eq("id", profileId)
+
+  if (error) throw error
+}
+
+export async function rejectProfile(
+  client: SupabaseBrowserClient,
+  profileId: string,
+  adminId: string,
+  reason?: string,
+) {
+  const { error } = await client
+    .from("profiles")
+    .update({
+      approval_status: "rejected",
+      rejected_at: new Date().toISOString(),
+      rejected_by: adminId,
+      rejection_reason: reason?.trim() || null,
+      approved_at: null,
+      approved_by: null,
+    })
+    .eq("id", profileId)
+
+  if (error) throw error
+}
+
+export async function getProfileApprovalStatus(client: SupabaseBrowserClient, userId: string) {
+  const { data, error } = await client
+    .from("profiles")
+    .select("approval_status")
+    .eq("id", userId)
+    .single()
+
+  if (error) throw error
+
+  return (data.approval_status || "pending") as ApprovalStatus
 }
 
 export async function getAdminPets(client: SupabaseBrowserClient) {
@@ -874,6 +1022,33 @@ export async function getAdminConsultations(client: SupabaseBrowserClient) {
   return rows.map((consultation) => mapConsultation(consultation, petsById, profilesById, appointmentsById))
 }
 
+export async function getAdminConsultationWeekdayStats(client: SupabaseBrowserClient) {
+  const weekdayStats: AdminConsultationWeekdayStat[] = [
+    { name: "Seg", consultas: 0 },
+    { name: "Ter", consultas: 0 },
+    { name: "Qua", consultas: 0 },
+    { name: "Qui", consultas: 0 },
+    { name: "Sex", consultas: 0 },
+    { name: "Sab", consultas: 0 },
+    { name: "Dom", consultas: 0 },
+  ]
+
+  const { data, error } = await client
+    .from("consultas")
+    .select("id,data,status")
+    .eq("status", "realizada")
+
+  if (error) throw error
+
+  ;((data || []) as Pick<ConsultaRow, "id" | "data" | "status">[]).forEach((consultation) => {
+    const date = new Date(`${consultation.data}T00:00:00`)
+    const weekdayIndex = (date.getDay() + 6) % 7
+    weekdayStats[weekdayIndex].consultas += 1
+  })
+
+  return weekdayStats
+}
+
 export async function getAdminHistoryEntries(client: SupabaseBrowserClient) {
   const { data, error } = await client
     .from("historico")
@@ -916,4 +1091,57 @@ export async function getAdminHistoryEntries(client: SupabaseBrowserClient) {
   }, {})
 
   return rows.map((entry) => mapHistoryEntry(entry, petsById, profilesById, consultationsById))
+}
+
+export async function getAdminFinancialEntries(client: SupabaseBrowserClient) {
+  const { data, error } = await client
+    .from("lancamentos")
+    .select("id,user_id,descricao,tipo,valor,data,categoria,created_at")
+    .order("data", { ascending: false })
+    .order("created_at", { ascending: false })
+
+  if (error) throw error
+
+  return ((data || []) as LancamentoRow[]).map(mapFinancialEntry)
+}
+
+export async function createFinancialEntry(client: SupabaseBrowserClient, input: CreateFinancialEntryInput) {
+  const { data, error } = await client
+    .from("lancamentos")
+    .insert({
+      user_id: input.userId,
+      descricao: input.descricao,
+      tipo: input.tipo,
+      valor: input.valor,
+      data: input.data,
+      categoria: input.categoria,
+    })
+    .select("id,user_id,descricao,tipo,valor,data,categoria,created_at")
+    .single()
+
+  if (error) throw error
+
+  return mapFinancialEntry(data as LancamentoRow)
+}
+
+export function calculateFinancialSummary(entries: AdminFinancialEntry[], referenceDate = new Date()): FinancialSummary {
+  const referenceMonth = referenceDate.getMonth()
+  const referenceYear = referenceDate.getFullYear()
+  const currentMonthEntries = entries.filter((entry) => {
+    const entryDate = new Date(`${entry.data}T00:00:00`)
+    return entryDate.getMonth() === referenceMonth && entryDate.getFullYear() === referenceYear
+  })
+
+  const receitaMes = currentMonthEntries
+    .filter((entry) => entry.tipo === "entrada")
+    .reduce((total, entry) => total + entry.valor, 0)
+  const despesasMes = currentMonthEntries
+    .filter((entry) => entry.tipo === "saida")
+    .reduce((total, entry) => total + entry.valor, 0)
+
+  return {
+    receitaMes,
+    despesasMes,
+    lucroLiquido: receitaMes - despesasMes,
+  }
 }

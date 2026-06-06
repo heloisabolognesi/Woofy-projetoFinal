@@ -1,12 +1,13 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
-import { getRoleHome, isUserRole, type UserRole } from '@/lib/auth-routes'
+import { getRoleHome, isApprovalStatus, isUserRole, type ApprovalStatus, type UserRole } from '@/lib/auth-routes'
 
 const adminRoutes = ['/dashboard', '/pets', '/consultas', '/vacinacao', '/historico', '/financeiro', '/agenda']
 const tutorRoutes = ['/tutor']
 const veterinarioRoutes = ['/veterinario']
 const protectedRoutes = [...adminRoutes, ...tutorRoutes, ...veterinarioRoutes]
 const authRoutes = ['/login', '/registro']
+const approvalRoutes = ['/aguardando-aprovacao']
 
 function matchesRoute(pathname: string, routes: string[]) {
   return routes.some((route) => pathname === route || pathname.startsWith(route + '/'))
@@ -52,6 +53,7 @@ export async function middleware(request: NextRequest) {
 
   const isProtectedRoute = matchesRoute(pathname, protectedRoutes)
   const isAuthRoute = matchesRoute(pathname, authRoutes)
+  const isApprovalRoute = matchesRoute(pathname, approvalRoutes)
 
   if (isProtectedRoute && !user) {
     const url = request.nextUrl.clone()
@@ -60,12 +62,33 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  if (isAuthRoute && user) {
+  if ((isAuthRoute || isApprovalRoute) && user) {
     const { data: profile } = await supabase
       .from('profiles')
-      .select('role')
+      .select('role,approval_status')
       .eq('id', user.id)
       .single()
+
+    const approvalStatus: ApprovalStatus = isApprovalStatus(profile?.approval_status)
+      ? profile.approval_status
+      : 'pending'
+
+    if (approvalStatus === 'pending') {
+      if (!isApprovalRoute) {
+        const url = request.nextUrl.clone()
+        url.pathname = '/aguardando-aprovacao'
+        return NextResponse.redirect(url)
+      }
+      return supabaseResponse
+    }
+
+    if (approvalStatus === 'rejected') {
+      if (isAuthRoute) return supabaseResponse
+      const url = request.nextUrl.clone()
+      url.pathname = '/login'
+      url.searchParams.set('approval', 'rejected')
+      return NextResponse.redirect(url)
+    }
 
     const url = request.nextUrl.clone()
     url.pathname = getRoleHome(isUserRole(profile?.role) ? profile.role : null)
@@ -75,9 +98,26 @@ export async function middleware(request: NextRequest) {
   if (isProtectedRoute && user) {
     const { data: profile } = await supabase
       .from('profiles')
-      .select('role')
+      .select('role,approval_status')
       .eq('id', user.id)
       .single()
+
+    const approvalStatus: ApprovalStatus = isApprovalStatus(profile?.approval_status)
+      ? profile.approval_status
+      : 'pending'
+
+    if (approvalStatus === 'pending') {
+      const url = request.nextUrl.clone()
+      url.pathname = '/aguardando-aprovacao'
+      return NextResponse.redirect(url)
+    }
+
+    if (approvalStatus === 'rejected') {
+      const url = request.nextUrl.clone()
+      url.pathname = '/login'
+      url.searchParams.set('approval', 'rejected')
+      return NextResponse.redirect(url)
+    }
 
     const role: UserRole = isUserRole(profile?.role) ? profile.role : 'tutor'
     const isAllowed =

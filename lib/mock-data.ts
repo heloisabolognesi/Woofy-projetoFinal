@@ -303,72 +303,7 @@ export const historico: HistoricoItem[] = [
   },
 ]
 
-export const lancamentos: Lancamento[] = [
-  {
-    id: "1",
-    descricao: "Consulta - Thor",
-    tipo: "entrada",
-    valor: 150,
-    data: "2026-06-01",
-    categoria: "Consultas",
-  },
-  {
-    id: "2",
-    descricao: "Vacina V10 - Max",
-    tipo: "entrada",
-    valor: 120,
-    data: "2026-05-30",
-    categoria: "Vacinas",
-  },
-  {
-    id: "3",
-    descricao: "Compra de medicamentos",
-    tipo: "saida",
-    valor: 450,
-    data: "2026-05-28",
-    categoria: "Medicamentos",
-  },
-  {
-    id: "4",
-    descricao: "Cirurgia - Luna",
-    tipo: "entrada",
-    valor: 800,
-    data: "2026-05-25",
-    categoria: "Cirurgias",
-  },
-  {
-    id: "5",
-    descricao: "Aluguel do consultório",
-    tipo: "saida",
-    valor: 2500,
-    data: "2026-05-20",
-    categoria: "Aluguel",
-  },
-  {
-    id: "6",
-    descricao: "Exames laboratoriais - Bob",
-    tipo: "entrada",
-    valor: 280,
-    data: "2026-05-18",
-    categoria: "Exames",
-  },
-  {
-    id: "7",
-    descricao: "Conta de luz",
-    tipo: "saida",
-    valor: 320,
-    data: "2026-05-15",
-    categoria: "Utilidades",
-  },
-  {
-    id: "8",
-    descricao: "Banho e tosa - Mia",
-    tipo: "entrada",
-    valor: 80,
-    data: "2026-05-12",
-    categoria: "Estética",
-  },
-]
+export const lancamentos: Lancamento[] = []
 
 export const agendamentos: Agendamento[] = [
   {
