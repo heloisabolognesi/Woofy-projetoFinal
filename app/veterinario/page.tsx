@@ -41,8 +41,8 @@ export default function VeterinarioPage() {
   const [vaccineForm, setVaccineForm] = useState({
     petId: "",
     vacina: "",
-    dataAplicacao: today,
     proximaDose: "",
+    valor: "95",
   })
   const [statusFilter, setStatusFilter] = useState<"todos" | AgendamentoStatus>("todos")
   const [clinicalStateFilter, setClinicalStateFilter] = useState<ClinicalStateFilter>("todos")
@@ -245,8 +245,9 @@ export default function VeterinarioPage() {
       setErrorMessage("Selecione um pet para registrar a vacina.")
       return
     }
-    if (!vaccineForm.vacina.trim() || !vaccineForm.dataAplicacao) {
-      setErrorMessage("Informe a vacina e a data de aplicação.")
+    const vaccineValue = Number(vaccineForm.valor)
+    if (!vaccineForm.vacina.trim() || !Number.isFinite(vaccineValue) || vaccineValue <= 0) {
+      setErrorMessage("Informe a vacina e um valor válido.")
       return
     }
 
@@ -259,18 +260,20 @@ export default function VeterinarioPage() {
         petId: selectedPet.id,
         userId: selectedPet.userId,
         vacina: vaccineForm.vacina.trim(),
-        dataAplicacao: vaccineForm.dataAplicacao,
+        dataAplicacao: null,
         proximaDose: vaccineForm.proximaDose || null,
         veterinarioId: user.id,
+        valor: vaccineValue,
+        status: "recommended",
       })
       setVaccineForm({
         petId: selectedPet.id,
         vacina: "",
-        dataAplicacao: today,
         proximaDose: "",
+        valor: "95",
       })
       setVaccineRecords(await getVeterinarianVaccines(supabase, user.id))
-      setMessage(`Vacina registrada para ${selectedPet.nome}.`)
+      setMessage(`Vacina recomendada para ${selectedPet.nome}.`)
     } catch {
       setErrorMessage("Não foi possível registrar a vacina.")
     } finally {
@@ -530,10 +533,10 @@ export default function VeterinarioPage() {
               required
             />
             <Field
-              label="Aplicação"
-              type="date"
-              value={vaccineForm.dataAplicacao}
-              onChange={(value) => setVaccineForm({ ...vaccineForm, dataAplicacao: value })}
+              label="Valor"
+              type="number"
+              value={vaccineForm.valor}
+              onChange={(value) => setVaccineForm({ ...vaccineForm, valor: value })}
               required
             />
             <Field
@@ -556,10 +559,11 @@ export default function VeterinarioPage() {
                 <div key={vacina.id} className="rounded-lg border border-border bg-background p-4">
                   <p className="font-semibold text-foreground">{vacina.petNome} - {vacina.vacina}</p>
                   <p className="text-sm text-muted-foreground">Tutor: {vacina.tutorDisplayName}</p>
-                  <p className="text-sm text-muted-foreground">Aplicação: {vacina.dataAplicacao}</p>
+                  <p className="text-sm text-muted-foreground">Status: {vacina.status}</p>
                   <p className="text-sm text-muted-foreground">
                     Próxima dose: {vacina.proximaDose || "não definida"}
                   </p>
+                  <p className="text-sm text-muted-foreground">Valor: {vacina.valor != null ? new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(vacina.valor) : "não definido"}</p>
                   <p className="text-sm text-muted-foreground">Criada em: {new Date(vacina.createdAt).toLocaleDateString("pt-BR")}</p>
                 </div>
               ))}

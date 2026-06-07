@@ -29,6 +29,7 @@ import {
   getTutorPetHistory,
   getTutorVaccines,
   restoreTutorAppointment,
+  scheduleTutorVaccine,
   type AdminHistoryEntry,
   type AdminVaccine,
   type ClinicAppointment,
@@ -87,6 +88,16 @@ function speciesLabel(especie: Especie) {
   return labels[especie] || especie
 }
 
+function vaccineStatusLabel(status: AdminVaccine["status"]) {
+  const labels: Record<AdminVaccine["status"], string> = {
+    recommended: "Recomendada",
+    scheduled: "Agendada",
+    applied: "Aplicada",
+    cancelled: "Cancelada",
+  }
+  return labels[status] || status
+}
+
 function readableError(error: unknown) {
   if (error instanceof Error) return error.message
   if (typeof error === "object" && error !== null) return JSON.stringify(error)
@@ -105,6 +116,7 @@ export default function TutorPage() {
   const [feedbacks, setFeedbacks] = useState<TutorConsultationFeedback[]>([])
   const [historico, setHistorico] = useState<AdminHistoryEntry[]>([])
   const [financialSummary, setFinancialSummary] = useState({ consultationTotal: 0, vaccineTotal: 0, total: 0 })
+  const [vaccineScheduleForms, setVaccineScheduleForms] = useState<Record<string, { data: string; horario: string }>>({})
   const [petForm, setPetForm] = useState(initialPetForm)
   const [appointmentForm, setAppointmentForm] = useState(initialAppointmentForm)
   const [isLoadingData, setIsLoadingData] = useState(true)
@@ -339,6 +351,30 @@ export default function TutorPage() {
     }
   }
 
+  async function handleScheduleVaccine(vaccineId: string) {
+    if (!user) return
+
+    const form = vaccineScheduleForms[vaccineId]
+    if (!form?.data || !form?.horario) {
+      addToast("Informe data e horário para a vacina.", "error")
+      return
+    }
+
+    try {
+      const updatedVaccine = await scheduleTutorVaccine(supabase, {
+        vaccineId,
+        userId: user.id,
+        dataAgendada: form.data,
+        horarioAgendado: form.horario,
+      })
+      setVacinas((current) => current.map((vacina) => (vacina.id === vaccineId ? updatedVaccine : vacina)))
+      setFinancialSummary(await getTutorFinancialSummary(supabase, user.id))
+      addToast("Vacina agendada com sucesso.")
+    } catch {
+      addToast("Não foi possível agendar a vacina.", "error")
+    }
+  }
+
   if (loading || isLoadingData) {
     return (
       <div className="min-h-screen bg-[#F5F4EE] dark:bg-slate-900 flex items-center justify-center">
@@ -508,19 +544,7 @@ export default function TutorPage() {
                   ))}
                 </select>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="appointmentType">Tipo</Label>
-                <select
-                  id="appointmentType"
-                  required
-                  value={appointmentForm.tipo}
-                  onChange={(event) => setAppointmentForm({ ...appointmentForm, tipo: event.target.value })}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                >
-                  <option value="Consulta">Consulta</option>
-                  <option value="Vacinas">Vacinas</option>
-                </select>
-              </div>
+              <InfoRow title="Tipo" subtitle="Consulta" />
               <div className="space-y-2">
                 <Label htmlFor="observacoes">Observações</Label>
                 <Textarea
@@ -585,11 +609,42 @@ export default function TutorPage() {
             {vacinas.length > 0 ? (
               <div className="space-y-3">
                 {vacinas.map((vacina) => (
-                  <InfoRow
-                    key={vacina.id}
-                    title={vacina.vacina}
-                    subtitle={`${vacina.petNome || "Pet"} - próxima dose: ${vacina.proximaDose || "não definida"}`}
-                  />
+                  <div key={vacina.id} className="rounded-lg border border-border bg-background p-4">
+                    <p className="font-semibold text-foreground">{vacina.petNome || "Pet"} - {vacina.vacina}</p>
+                    <p className="text-sm text-muted-foreground">Veterinário: {vacina.veterinarianDisplayName}</p>
+                    <p className="text-sm text-muted-foreground">Status: {vaccineStatusLabel(vacina.status)}</p>
+                    <p className="text-sm text-muted-foreground">Valor a pagar: {formatCurrency(vacina.valor || 0)}</p>
+                    <p className="text-sm text-muted-foreground">Recomendada em: {vacina.dataRecomendada || "não definida"}</p>
+                    <p className="text-sm text-muted-foreground">Agendada para: {vacina.dataAgendada ? `${vacina.dataAgendada} ${vacina.horarioAgendado || ""}` : "não agendada"}</p>
+                    <p className="text-sm text-muted-foreground">Aplicação: {vacina.dataAplicacao || "não aplicada"}</p>
+                    {vacina.status === "recommended" && (
+                      <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
+                        <Input
+                          type="date"
+                          value={vaccineScheduleForms[vacina.id]?.data || ""}
+                          onChange={(event) =>
+                            setVaccineScheduleForms((current) => ({
+                              ...current,
+                              [vacina.id]: { ...current[vacina.id], data: event.target.value, horario: current[vacina.id]?.horario || "" },
+                            }))
+                          }
+                        />
+                        <Input
+                          type="time"
+                          value={vaccineScheduleForms[vacina.id]?.horario || ""}
+                          onChange={(event) =>
+                            setVaccineScheduleForms((current) => ({
+                              ...current,
+                              [vacina.id]: { ...current[vacina.id], data: current[vacina.id]?.data || "", horario: event.target.value },
+                            }))
+                          }
+                        />
+                        <Button type="button" onClick={() => handleScheduleVaccine(vacina.id)}>
+                          Agendar vacina
+                        </Button>
+                      </div>
+                    )}
+                  </div>
                 ))}
               </div>
             ) : (

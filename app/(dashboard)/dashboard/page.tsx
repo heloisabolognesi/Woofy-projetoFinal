@@ -95,6 +95,7 @@ interface ConsultaRow {
 interface VacinaRow {
   id: string
   proxima_dose: string | null
+  status?: "recommended" | "scheduled" | "applied" | "cancelled"
 }
 
 interface AdminDashboardData {
@@ -147,7 +148,7 @@ export default function DashboardPage() {
           supabase.from("pets").select("id,nome,arquivado").order("created_at", { ascending: false }),
           getAdminUpcomingAppointments(supabase),
           supabase.from("consultas").select("id,data,status").order("data", { ascending: false }),
-          supabase.from("vacinas").select("id,proxima_dose").order("proxima_dose", { ascending: true }),
+          supabase.from("vacinas").select("id,proxima_dose,status").order("proxima_dose", { ascending: true }),
           getAdminFinancialEntries(supabase),
           getAdminConsultationWeekdayStats(supabase),
         ])
@@ -180,6 +181,8 @@ export default function DashboardPage() {
   const consultasHoje = data.consultas.filter((c) => c.data === today && c.status === "realizada").length
 
   const vacinasPendentes = data.vacinas.filter((v) => {
+    if (v.status === "recommended" || v.status === "scheduled") return true
+    if (v.status === "cancelled") return false
     if (!v.proxima_dose) return false
     const proximaDose = new Date(v.proxima_dose)
     const now = new Date()

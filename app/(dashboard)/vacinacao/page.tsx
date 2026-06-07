@@ -34,6 +34,16 @@ function formatCurrency(value: number | null) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value)
 }
 
+function vaccineStatusLabel(status: AdminVaccine["status"]) {
+  const labels: Record<AdminVaccine["status"], string> = {
+    recommended: "Recomendada",
+    scheduled: "Agendada",
+    applied: "Aplicada",
+    cancelled: "Cancelada",
+  }
+  return labels[status] || status
+}
+
 export default function VacinacaoPage() {
   const { user, loading, refreshProfile } = useAuth()
   const router = useRouter()
@@ -100,6 +110,9 @@ export default function VacinacaoPage() {
                   <th className="text-left px-4 py-3 text-sm font-semibold text-card-foreground">Pet</th>
                   <th className="text-left px-4 py-3 text-sm font-semibold text-card-foreground">Tutor</th>
                   <th className="text-left px-4 py-3 text-sm font-semibold text-card-foreground">Vacina</th>
+                  <th className="text-left px-4 py-3 text-sm font-semibold text-card-foreground">Status</th>
+                  <th className="text-left px-4 py-3 text-sm font-semibold text-card-foreground">Recomendação</th>
+                  <th className="text-left px-4 py-3 text-sm font-semibold text-card-foreground">Agendada</th>
                   <th className="text-left px-4 py-3 text-sm font-semibold text-card-foreground">Aplicação</th>
                   <th className="text-left px-4 py-3 text-sm font-semibold text-card-foreground">Próxima Dose</th>
                   <th className="text-left px-4 py-3 text-sm font-semibold text-card-foreground">Veterinário</th>
@@ -115,6 +128,11 @@ export default function VacinacaoPage() {
                       <td className="px-4 py-3 font-medium text-card-foreground">{vacina.petNome}</td>
                       <td className="px-4 py-3 text-muted-foreground">{vacina.tutorDisplayName}</td>
                       <td className="px-4 py-3 text-card-foreground">{vacina.vacina}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{vaccineStatusLabel(vacina.status)}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{formatDate(vacina.dataRecomendada)}</td>
+                      <td className="px-4 py-3 text-muted-foreground">
+                        {vacina.dataAgendada ? `${formatDate(vacina.dataAgendada)} ${vacina.horarioAgendado || ""}` : "Não agendada"}
+                      </td>
                       <td className="px-4 py-3 text-muted-foreground">{formatDate(vacina.dataAplicacao)}</td>
                       <td className="px-4 py-3 text-muted-foreground">{formatDate(vacina.proximaDose)}</td>
                       <td className="px-4 py-3 text-muted-foreground">{vacina.veterinarianDisplayName}</td>

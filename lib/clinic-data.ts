@@ -8,6 +8,8 @@ export type AgendamentoStatus = "agendado" | "confirmado" | "realizado" | "cance
 export type AppointmentStatus = AgendamentoStatus
 export type ConsultaStatus = "agendada" | "realizada" | "cancelada"
 export type HistoricoTipo = "consulta" | "vacina" | "exame"
+export type VaccineStatus = "recommended" | "scheduled" | "applied" | "cancelled"
+export type FinancialEntryStatus = "active" | "cancelled"
 
 export interface ProfileSummary {
   id: string
@@ -82,10 +84,14 @@ interface VacinaRow {
   pet_id: string
   user_id: string
   vacina: string
-  data_aplicacao: string
+  data_aplicacao: string | null
   proxima_dose: string | null
   veterinario_id?: string | null
   valor?: number | null
+  status?: VaccineStatus | null
+  data_recomendada?: string | null
+  data_agendada?: string | null
+  horario_agendado?: string | null
   created_at: string
 }
 
@@ -97,6 +103,9 @@ interface LancamentoRow {
   valor: number
   data: string
   categoria: string
+  origem_tipo?: string | null
+  origem_id?: string | null
+  status?: FinancialEntryStatus | null
   created_at: string
 }
 
@@ -137,6 +146,9 @@ export interface AdminFinancialEntry {
   valor: number
   data: string
   categoria: string
+  origemTipo: string | null
+  origemId: string | null
+  status: FinancialEntryStatus
   createdAt: string
 }
 
@@ -295,8 +307,12 @@ export interface AdminVaccine {
   tutorDisplayName: string
   tutorEmail: string | null
   vacina: string
-  dataAplicacao: string
+  dataAplicacao: string | null
   proximaDose: string | null
+  status: VaccineStatus
+  dataRecomendada: string | null
+  dataAgendada: string | null
+  horarioAgendado: string | null
   veterinarioId: string | null
   veterinarianDisplayName: string
   valor: number | null
@@ -351,10 +367,18 @@ export interface CreateVaccineRecordInput {
   petId: string
   userId: string
   vacina: string
-  dataAplicacao: string
+  dataAplicacao?: string | null
   proximaDose: string | null
   veterinarioId: string
   valor?: number | null
+  status?: VaccineStatus
+}
+
+export interface ScheduleTutorVaccineInput {
+  vaccineId: string
+  userId: string
+  dataAgendada: string
+  horarioAgendado: string
 }
 
 const defaultConsultationPrice = 180
@@ -561,6 +585,10 @@ function mapVaccine(
     vacina: row.vacina,
     dataAplicacao: row.data_aplicacao,
     proximaDose: row.proxima_dose,
+    status: row.status || "recommended",
+    dataRecomendada: row.data_recomendada || null,
+    dataAgendada: row.data_agendada || null,
+    horarioAgendado: row.horario_agendado || null,
     veterinarioId: row.veterinario_id || null,
     veterinarianDisplayName: veterinarianProfileName || "A definir",
     valor: row.valor == null ? null : Number(row.valor),
@@ -577,6 +605,9 @@ function mapFinancialEntry(row: LancamentoRow): AdminFinancialEntry {
     valor: Number(row.valor),
     data: row.data,
     categoria: row.categoria,
+    origemTipo: row.origem_tipo || null,
+    origemId: row.origem_id || null,
+    status: row.status || "active",
     createdAt: row.created_at,
   }
 }
@@ -1273,7 +1304,9 @@ export async function createTutorAppointment(client: SupabaseBrowserClient, inpu
 
   const row = data as AgendamentoRow
   const profilesById = await getProfilesByIds(client, [row.user_id])
-  return mapClinicAppointment(row, { [pet.id]: pet }, profilesById)
+  const appointment = mapClinicAppointment(row, { [pet.id]: pet }, profilesById)
+  await createOrUpdateFinanceEntryFromAppointment(client, appointment)
+  return appointment
 }
 
 export async function updateAppointmentStatus(
@@ -1336,25 +1369,108 @@ export async function getTutorVaccines(client: SupabaseBrowserClient, userId: st
 }
 
 export async function getTutorFinancialSummary(client: SupabaseBrowserClient, userId: string) {
-  const [{ data: consultationData, error: consultationError }, { data: vaccineData, error: vaccineError }] =
-    await Promise.all([
-      client.from("consultas").select("id,valor").eq("user_id", userId),
-      client.from("vacinas").select("id,valor").eq("user_id", userId),
-    ])
+  const { data, error } = await client
+    .from("lancamentos")
+    .select("id,tipo,valor,categoria,status")
+    .eq("user_id", userId)
+    .eq("tipo", "entrada")
+    .neq("status", "cancelled")
 
-  if (consultationError) throw clinicDataError(consultationError)
-  if (vaccineError) throw clinicDataError(vaccineError)
+  if (error) throw clinicDataError(error)
 
-  const consultationTotal = ((consultationData || []) as Pick<ConsultaRow, "id" | "valor">[])
-    .reduce((total, consultation) => total + Number(consultation.valor || 0), 0)
-  const vaccineTotal = ((vaccineData || []) as Pick<VacinaRow, "id" | "valor">[])
-    .reduce((total, vaccine) => total + Number(vaccine.valor || 0), 0)
+  const rows = (data || []) as Pick<LancamentoRow, "id" | "tipo" | "valor" | "categoria" | "status">[]
+  const consultationTotal = rows
+    .filter((entry) => entry.categoria === "Consultas")
+    .reduce((total, entry) => total + Number(entry.valor || 0), 0)
+  const vaccineTotal = rows
+    .filter((entry) => entry.categoria === "Vacinas")
+    .reduce((total, entry) => total + Number(entry.valor || 0), 0)
 
   return {
     consultationTotal,
     vaccineTotal,
     total: consultationTotal + vaccineTotal,
   }
+}
+
+async function createOrUpdateFinanceEntryFromSource(
+  client: SupabaseBrowserClient,
+  input: {
+    userId: string
+    descricao: string
+    categoria: "Consultas" | "Vacinas"
+    valor: number
+    data: string
+    origemTipo: "appointment" | "vaccine"
+    origemId: string
+  },
+) {
+  const { data: existingData, error: existingError } = await client
+    .from("lancamentos")
+    .select("id")
+    .eq("origem_tipo", input.origemTipo)
+    .eq("origem_id", input.origemId)
+    .maybeSingle()
+
+  if (existingError) throw clinicDataError(existingError)
+
+  const payload = {
+    user_id: input.userId,
+    descricao: input.descricao,
+    tipo: "entrada" as FinancialEntryType,
+    valor: input.valor,
+    data: input.data,
+    categoria: input.categoria,
+    origem_tipo: input.origemTipo,
+    origem_id: input.origemId,
+    status: "active" as FinancialEntryStatus,
+  }
+
+  if (existingData?.id) {
+    const { error } = await client
+      .from("lancamentos")
+      .update(payload)
+      .eq("id", existingData.id)
+
+    if (error) throw clinicDataError(error)
+    return
+  }
+
+  const { error } = await client
+    .from("lancamentos")
+    .insert(payload)
+
+  if (error) throw clinicDataError(error)
+}
+
+export async function createOrUpdateFinanceEntryFromAppointment(
+  client: SupabaseBrowserClient,
+  appointment: ClinicAppointment,
+) {
+  await createOrUpdateFinanceEntryFromSource(client, {
+    userId: appointment.userId,
+    descricao: `Consulta - ${appointment.petNome}`,
+    categoria: "Consultas",
+    valor: appointment.precoEstimado ?? defaultConsultationPrice,
+    data: appointment.data,
+    origemTipo: "appointment",
+    origemId: appointment.id,
+  })
+}
+
+export async function createOrUpdateFinanceEntryFromVaccine(
+  client: SupabaseBrowserClient,
+  vaccine: AdminVaccine,
+) {
+  await createOrUpdateFinanceEntryFromSource(client, {
+    userId: vaccine.userId,
+    descricao: `Vacina - ${vaccine.petNome} - ${vaccine.vacina}`,
+    categoria: "Vacinas",
+    valor: vaccine.valor ?? defaultVaccinePrice,
+    data: vaccine.dataAgendada || vaccine.dataRecomendada || new Date().toISOString().split("T")[0],
+    origemTipo: "vaccine",
+    origemId: vaccine.id,
+  })
 }
 
 export async function getVeterinarianVaccines(client: SupabaseBrowserClient, veterinarianId?: string) {
@@ -1390,10 +1506,12 @@ export async function createVaccineRecord(client: SupabaseBrowserClient, input: 
       pet_id: input.petId,
       user_id: input.userId,
       vacina: input.vacina,
-      data_aplicacao: input.dataAplicacao,
+      data_aplicacao: input.status === "applied" ? input.dataAplicacao || new Date().toISOString().split("T")[0] : null,
       proxima_dose: input.proximaDose,
       veterinario_id: input.veterinarioId,
       valor: input.valor ?? defaultVaccinePrice,
+      status: input.status || "recommended",
+      data_recomendada: new Date().toISOString().split("T")[0],
     })
     .select("*")
     .single()
@@ -1403,6 +1521,27 @@ export async function createVaccineRecord(client: SupabaseBrowserClient, input: 
   const row = data as VacinaRow
   const profilesById = await getProfilesByIds(client, [row.user_id, row.veterinario_id || ""])
   return mapVaccine(row, { [input.petId]: petData as PetRow }, profilesById)
+}
+
+export async function scheduleTutorVaccine(client: SupabaseBrowserClient, input: ScheduleTutorVaccineInput) {
+  const { data, error } = await client
+    .from("vacinas")
+    .update({
+      status: "scheduled",
+      data_agendada: input.dataAgendada,
+      horario_agendado: input.horarioAgendado,
+    })
+    .eq("id", input.vaccineId)
+    .eq("user_id", input.userId)
+    .select("*")
+    .single()
+
+  if (error) throw clinicDataError(error)
+
+  const row = data as VacinaRow
+  const [vaccine] = await mapVaccineRows(client, [row])
+  await createOrUpdateFinanceEntryFromVaccine(client, vaccine)
+  return vaccine
 }
 
 export async function getAdminUpcomingAppointments(client: SupabaseBrowserClient) {
@@ -1643,7 +1782,7 @@ export async function getAdminHistoryEntries(client: SupabaseBrowserClient) {
 export async function getAdminFinancialEntries(client: SupabaseBrowserClient) {
   const { data, error } = await client
     .from("lancamentos")
-    .select("id,user_id,descricao,tipo,valor,data,categoria,created_at")
+    .select("id,user_id,descricao,tipo,valor,data,categoria,origem_tipo,origem_id,status,created_at")
     .order("data", { ascending: false })
     .order("created_at", { ascending: false })
 
@@ -1662,8 +1801,10 @@ export async function createFinancialEntry(client: SupabaseBrowserClient, input:
       valor: input.valor,
       data: input.data,
       categoria: input.categoria,
+      origem_tipo: "manual",
+      status: "active",
     })
-    .select("id,user_id,descricao,tipo,valor,data,categoria,created_at")
+    .select("id,user_id,descricao,tipo,valor,data,categoria,origem_tipo,origem_id,status,created_at")
     .single()
 
   if (error) throw clinicDataError(error)
@@ -1676,7 +1817,7 @@ export function calculateFinancialSummary(entries: AdminFinancialEntry[], refere
   const referenceYear = referenceDate.getFullYear()
   const currentMonthEntries = entries.filter((entry) => {
     const entryDate = new Date(`${entry.data}T00:00:00`)
-    return entryDate.getMonth() === referenceMonth && entryDate.getFullYear() === referenceYear
+    return entry.status !== "cancelled" && entryDate.getMonth() === referenceMonth && entryDate.getFullYear() === referenceYear
   })
 
   const receitaMes = currentMonthEntries
