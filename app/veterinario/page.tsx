@@ -11,21 +11,21 @@ import { Textarea } from "@/components/ui/textarea"
 import { useAuth } from "@/context/auth-context"
 import { createClient } from "@/lib/supabase"
 import {
+  archiveVeterinarianAppointment,
   createVaccineRecord,
   createConsultationWithHistory,
   getPetsForVeterinarianWorkflow,
   getVeterinarianVaccines,
   getVeterinarianAppointments,
+  restoreVeterinarianAppointment,
   type AdminVaccine,
   type AgendamentoStatus,
   type ClinicAppointmentDetail,
   type ClinicPetOption,
-  type HistoricoTipo,
 } from "@/lib/clinic-data"
 
 const today = new Date().toISOString().split("T")[0]
-type ClinicalStateFilter = "todos" | "feedback-pendente" | "feedback-registrado" | "historico-pendente" | "historico-registrado" | "consulta-realizada"
-type AssignmentFilter = "meus" | "sem-veterinario" | "disponiveis"
+type ClinicalStateFilter = "todos" | "retorno-pendente" | "retorno-registrado" | "consulta-realizada"
 type OrderFilter = "proximos" | "distantes" | "criados-recentes" | "criados-antigos"
 
 export default function VeterinarioPage() {
@@ -36,10 +36,8 @@ export default function VeterinarioPage() {
   const [vaccinePets, setVaccinePets] = useState<ClinicPetOption[]>([])
   const [vaccineRecords, setVaccineRecords] = useState<AdminVaccine[]>([])
   const [selectedAppointmentId, setSelectedAppointmentId] = useState("")
-  const [feedback, setFeedback] = useState("")
-  const [historyDescription, setHistoryDescription] = useState("")
-  const [historyType, setHistoryType] = useState<HistoricoTipo>("consulta")
-  const [historyDate, setHistoryDate] = useState(today)
+  const [medicalReturn, setMedicalReturn] = useState("")
+  const [medicalReturnDate, setMedicalReturnDate] = useState(today)
   const [vaccineForm, setVaccineForm] = useState({
     petId: "",
     vacina: "",
@@ -48,7 +46,6 @@ export default function VeterinarioPage() {
   })
   const [statusFilter, setStatusFilter] = useState<"todos" | AgendamentoStatus>("todos")
   const [clinicalStateFilter, setClinicalStateFilter] = useState<ClinicalStateFilter>("todos")
-  const [assignmentFilter, setAssignmentFilter] = useState<AssignmentFilter>("disponiveis")
   const [orderFilter, setOrderFilter] = useState<OrderFilter>("proximos")
   const [isLoadingData, setIsLoadingData] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
@@ -58,7 +55,7 @@ export default function VeterinarioPage() {
 
   const selectedAppointment = agendamentos.find((item) => item.id === selectedAppointmentId) || null
   const veterinarianName = profile?.full_name || user?.email || "Veterinário"
-  const activeAppointments = agendamentos.filter((appointment) =>
+  const activeStatusAppointments = agendamentos.filter((appointment) =>
     appointment.status === "agendado" || appointment.status === "confirmado"
   )
   const filteredAppointments = useMemo(() => {
@@ -66,15 +63,9 @@ export default function VeterinarioPage() {
       .filter((appointment) => {
         if (statusFilter !== "todos" && appointment.status !== statusFilter) return false
 
-        if (clinicalStateFilter === "feedback-pendente" && appointment.consultation) return false
-        if (clinicalStateFilter === "feedback-registrado" && !appointment.consultation) return false
-        if (clinicalStateFilter === "historico-pendente" && appointment.historyEntry) return false
-        if (clinicalStateFilter === "historico-registrado" && !appointment.historyEntry) return false
+        if (clinicalStateFilter === "retorno-pendente" && appointment.consultation) return false
+        if (clinicalStateFilter === "retorno-registrado" && !appointment.consultation) return false
         if (clinicalStateFilter === "consulta-realizada" && appointment.status !== "realizado" && !appointment.consultation) return false
-
-        if (assignmentFilter === "meus" && appointment.veterinarioId !== user?.id) return false
-        if (assignmentFilter === "sem-veterinario" && appointment.veterinarioId) return false
-        if (assignmentFilter === "disponiveis" && appointment.veterinarioId && appointment.veterinarioId !== user?.id) return false
 
         return true
       })
@@ -87,7 +78,9 @@ export default function VeterinarioPage() {
         const comparison = `${a.data}T${a.horarioInicio}`.localeCompare(`${b.data}T${b.horarioInicio}`)
         return orderFilter === "proximos" ? comparison : -comparison
       })
-  }, [agendamentos, assignmentFilter, clinicalStateFilter, orderFilter, statusFilter, user?.id])
+  }, [agendamentos, clinicalStateFilter, orderFilter, statusFilter])
+  const activeAppointments = filteredAppointments.filter((appointment) => !appointment.veterinarianArchivedAt)
+  const archivedAppointments = filteredAppointments.filter((appointment) => appointment.veterinarianArchivedAt)
 
   const loadVeterinarianData = useCallback(async (preferredAppointmentId?: string) => {
     if (!user) return
@@ -139,17 +132,13 @@ export default function VeterinarioPage() {
     if (!selectedAppointment) return
 
     if (selectedAppointment.consultation) {
-      setFeedback(selectedAppointment.consultation.motivo)
-      setHistoryDescription(selectedAppointment.historyEntry?.descricao || "")
-      setHistoryType(selectedAppointment.historyEntry?.tipo || "consulta")
-      setHistoryDate(selectedAppointment.historyEntry?.data || today)
+      setMedicalReturn(selectedAppointment.consultation.motivo)
+      setMedicalReturnDate(selectedAppointment.consultation.data || today)
       return
     }
 
-    setFeedback("")
-    setHistoryDescription("")
-    setHistoryType("consulta")
-    setHistoryDate(today)
+    setMedicalReturn("")
+    setMedicalReturnDate(today)
   }, [selectedAppointment])
 
   useEffect(() => {
@@ -176,12 +165,12 @@ export default function VeterinarioPage() {
       setErrorMessage("Selecione um agendamento.")
       return
     }
-    if (!feedback.trim() && !historyDescription.trim()) {
-      setErrorMessage("Escreva o feedback da consulta ou a descrição do histórico.")
+    if (!medicalReturn.trim()) {
+      setErrorMessage("Escreva o retorno médico.")
       return
     }
-    if (selectedAppointment.consultation && selectedAppointment.historyEntry) {
-      setErrorMessage("Este agendamento já possui feedback e histórico registrados.")
+    if (selectedAppointment.consultation) {
+      setErrorMessage("Este agendamento já possui retorno médico registrado.")
       return
     }
     if (selectedAppointment.status === "cancelado") {
@@ -198,10 +187,10 @@ export default function VeterinarioPage() {
         appointment: selectedAppointment,
         veterinarianId: user.id,
         veterinarianName,
-        feedback: feedback.trim(),
-        historyDescription: historyDescription.trim(),
-        historyType,
-        historyDate,
+        feedback: medicalReturn.trim(),
+        historyDescription: "",
+        historyType: "consulta",
+        historyDate: medicalReturnDate,
       })
       await loadVeterinarianData(selectedAppointment.id)
     } catch {
@@ -212,6 +201,39 @@ export default function VeterinarioPage() {
 
     setIsSaving(false)
     setMessage(`Registro clínico salvo para ${selectedAppointment.petNome}.`)
+  }
+
+  async function handleArchiveAppointment(appointmentId: string) {
+    if (!user) return
+
+    try {
+      await archiveVeterinarianAppointment(supabase, appointmentId, user.id)
+      const archivedAt = new Date().toISOString()
+      setAgendamentos((current) =>
+        current.map((appointment) =>
+          appointment.id === appointmentId ? { ...appointment, veterinarianArchivedAt: archivedAt } : appointment
+        )
+      )
+      setMessage("Agendamento arquivado.")
+    } catch {
+      setErrorMessage("Não foi possível arquivar o agendamento.")
+    }
+  }
+
+  async function handleRestoreAppointment(appointmentId: string) {
+    if (!user) return
+
+    try {
+      await restoreVeterinarianAppointment(supabase, appointmentId, user.id)
+      setAgendamentos((current) =>
+        current.map((appointment) =>
+          appointment.id === appointmentId ? { ...appointment, veterinarianArchivedAt: null } : appointment
+        )
+      )
+      setMessage("Agendamento restaurado.")
+    } catch {
+      setErrorMessage("Não foi possível restaurar o agendamento.")
+    }
   }
 
   async function handleCreateVaccine(event: React.FormEvent<HTMLFormElement>) {
@@ -285,21 +307,20 @@ export default function VeterinarioPage() {
             Olá, {profile?.full_name || "veterinário"}
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-slate-600 dark:text-slate-300">
-            Consulte os agendamentos reais da clínica e registre feedback clínico para o histórico do pet.
+            Consulte seus agendamentos reais e registre o retorno médico para o tutor.
           </p>
           {message && <p className="mt-3 text-sm font-medium text-green-700">{message}</p>}
           {errorMessage && <p className="mt-3 text-sm font-medium text-destructive">{errorMessage}</p>}
         </section>
 
-        <section className="grid gap-4 md:grid-cols-4">
+        <section className="grid gap-4 md:grid-cols-3">
           <SummaryCard icon={CalendarDays} title="Agendamentos" value={agendamentos.length} />
-          <SummaryCard icon={Stethoscope} title="Ativos" value={activeAppointments.length} />
-          <SummaryCard icon={ClipboardList} title="Feedbacks registrados" value={agendamentos.filter((item) => item.consultation).length} />
-          <SummaryCard icon={ClipboardList} title="Históricos registrados" value={agendamentos.filter((item) => item.historyEntry).length} />
+          <SummaryCard icon={Stethoscope} title="Ativos" value={activeStatusAppointments.length} />
+          <SummaryCard icon={ClipboardList} title="Retornos médicos" value={agendamentos.filter((item) => item.consultation).length} />
         </section>
 
         <section className="grid gap-6 lg:grid-cols-[1fr_420px]">
-          <Panel title="Ver agendamentos" icon={CalendarDays}>
+          <Panel title="Agendamentos ativos" icon={CalendarDays}>
             <div className="mb-4 grid gap-3 sm:grid-cols-2">
               <FilterSelect
                 label="Status"
@@ -319,21 +340,9 @@ export default function VeterinarioPage() {
                 onChange={(value) => setClinicalStateFilter(value as ClinicalStateFilter)}
                 options={[
                   ["todos", "Todos"],
-                  ["feedback-pendente", "Feedback pendente"],
-                  ["feedback-registrado", "Feedback registrado"],
-                  ["historico-pendente", "Histórico pendente"],
-                  ["historico-registrado", "Histórico registrado"],
+                  ["retorno-pendente", "Retorno pendente"],
+                  ["retorno-registrado", "Retorno registrado"],
                   ["consulta-realizada", "Consulta realizada"],
-                ]}
-              />
-              <FilterSelect
-                label="Atribuição"
-                value={assignmentFilter}
-                onChange={(value) => setAssignmentFilter(value as AssignmentFilter)}
-                options={[
-                  ["meus", "Meus agendamentos"],
-                  ["sem-veterinario", "Sem veterinário definido"],
-                  ["disponiveis", "Todos disponíveis"],
                 ]}
               />
               <FilterSelect
@@ -349,22 +358,20 @@ export default function VeterinarioPage() {
               />
             </div>
 
-            {filteredAppointments.length > 0 ? (
+            {activeAppointments.length > 0 ? (
               <div className="space-y-3">
-                {filteredAppointments.map((appointment) => {
+                {activeAppointments.map((appointment) => {
                   const isSelected = appointment.id === selectedAppointmentId
 
                   return (
-                    <button
+                    <div
                       key={appointment.id}
-                      type="button"
-                      onClick={() => setSelectedAppointmentId(appointment.id)}
-                      className={`w-full rounded-lg border p-4 text-left transition ${
+                      className={`w-full rounded-lg border p-4 transition ${
                         isSelected ? "border-[#5E929F] bg-[#AAC9BA]/15" : "border-border bg-background hover:bg-muted/40"
                       }`}
                     >
                       <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
+                        <button type="button" onClick={() => setSelectedAppointmentId(appointment.id)} className="text-left">
                           <p className="font-semibold text-foreground">{appointment.petNome}</p>
                           <p className="text-sm text-muted-foreground">
                             Tutor: {appointment.tutorDisplayName}
@@ -372,7 +379,7 @@ export default function VeterinarioPage() {
                           <p className="text-sm text-muted-foreground">
                             Veterinário: {appointment.veterinarianDisplayName}
                           </p>
-                        </div>
+                        </button>
                         <div className="text-left sm:text-right">
                           <p className="text-sm font-medium text-foreground">
                             {appointment.data} as {appointment.horarioInicio}
@@ -382,15 +389,15 @@ export default function VeterinarioPage() {
                           <div className="mt-2 flex flex-wrap gap-1 sm:justify-end">
                             {appointment.status === "realizado" && <RecordBadge>Consulta realizada</RecordBadge>}
                             <RecordBadge muted={!appointment.consultation}>
-                              {appointment.consultation ? "Feedback registrado" : "Feedback pendente"}
-                            </RecordBadge>
-                            <RecordBadge muted={!appointment.historyEntry}>
-                              {appointment.historyEntry ? "Histórico registrado" : "Histórico pendente"}
+                              {appointment.consultation ? "Retorno registrado" : "Retorno pendente"}
                             </RecordBadge>
                           </div>
+                          <Button type="button" variant="outline" size="sm" className="mt-3" onClick={() => handleArchiveAppointment(appointment.id)}>
+                            Arquivar
+                          </Button>
                         </div>
                       </div>
-                    </button>
+                    </div>
                   )
                 })}
               </div>
@@ -399,7 +406,7 @@ export default function VeterinarioPage() {
             )}
           </Panel>
 
-          <Panel title="Feedback e Histórico" icon={Stethoscope}>
+          <Panel title="Retorno Médico" icon={Stethoscope}>
             <form onSubmit={handleSaveClinicalRecord} className="space-y-4">
               {selectedAppointment && (
                 <div className="rounded-lg border border-border bg-background p-4 text-sm">
@@ -410,24 +417,14 @@ export default function VeterinarioPage() {
                     <InfoLine label="Status" value={statusLabel(selectedAppointment.status)} />
                     <InfoLine label="Veterinário" value={selectedAppointment.veterinarianDisplayName} />
                     <InfoLine
-                      label="Feedback"
+                      label="Retorno Médico"
                       value={selectedAppointment.consultation ? "Registrado" : "Ainda não registrado"}
-                    />
-                    <InfoLine
-                      label="Histórico"
-                      value={selectedAppointment.historyEntry ? "Registrado" : "Ainda não registrado"}
                     />
                   </div>
                   {selectedAppointment.consultation && (
                     <div className="mt-4 border-t border-border pt-3">
-                      <p className="font-medium text-foreground">Feedback da consulta</p>
+                      <p className="font-medium text-foreground">Retorno Médico</p>
                       <p className="mt-1 text-muted-foreground">{selectedAppointment.consultation.motivo}</p>
-                    </div>
-                  )}
-                  {selectedAppointment.historyEntry && (
-                    <div className="mt-4 border-t border-border pt-3">
-                      <p className="font-medium text-foreground">Histórico do pet</p>
-                      <p className="mt-1 text-muted-foreground">{selectedAppointment.historyEntry.descricao}</p>
                     </div>
                   )}
                 </div>
@@ -443,7 +440,7 @@ export default function VeterinarioPage() {
                   className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                 >
                   <option value="">Selecione</option>
-                  {filteredAppointments.map((appointment) => (
+                  {activeAppointments.map((appointment) => (
                     <option key={appointment.id} value={appointment.id}>
                       {appointment.petNome} - {appointment.data} {appointment.horarioInicio} - {appointment.status}
                     </option>
@@ -451,43 +448,16 @@ export default function VeterinarioPage() {
                 </select>
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Data" type="date" value={historyDate} onChange={setHistoryDate} required />
-                <div className="space-y-2">
-                  <Label htmlFor="historyType">Tipo</Label>
-                  <select
-                    id="historyType"
-                    value={historyType}
-                    onChange={(event) => setHistoryType(event.target.value as HistoricoTipo)}
-                    disabled={!!selectedAppointment?.historyEntry}
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  >
-                    <option value="consulta">Consulta</option>
-                    <option value="vacina">Vacina</option>
-                    <option value="exame">Exame</option>
-                  </select>
-                </div>
-              </div>
+              <Field label="Data" type="date" value={medicalReturnDate} onChange={setMedicalReturnDate} required />
 
               <div className="space-y-2">
-                <Label htmlFor="feedback">Feedback da consulta</Label>
+                <Label htmlFor="medicalReturn">Retorno Médico</Label>
                 <Textarea
-                  id="feedback"
-                  value={feedback}
-                  onChange={(event) => setFeedback(event.target.value)}
+                  id="medicalReturn"
+                  value={medicalReturn}
+                  onChange={(event) => setMedicalReturn(event.target.value)}
                   readOnly={!!selectedAppointment?.consultation}
                   className="min-h-28"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="historyDescription">Descrição do histórico</Label>
-                <Textarea
-                  id="historyDescription"
-                  value={historyDescription}
-                  onChange={(event) => setHistoryDescription(event.target.value)}
-                  readOnly={!!selectedAppointment?.historyEntry}
-                  className="min-h-24"
                 />
               </div>
 
@@ -497,18 +467,42 @@ export default function VeterinarioPage() {
                   isSaving ||
                   !selectedAppointmentId ||
                   selectedAppointment?.status === "cancelado" ||
-                  (!!selectedAppointment?.consultation && !!selectedAppointment?.historyEntry)
+                  !!selectedAppointment?.consultation
                 }
                 className="w-full gap-2"
               >
                 {isSaving && <Loader2 className="h-4 w-4 animate-spin" />}
-                {selectedAppointment?.consultation && selectedAppointment?.historyEntry
-                  ? "Registros já salvos"
-                  : "Salvar registro clínico"}
+                {selectedAppointment?.consultation ? "Retorno já salvo" : "Salvar retorno médico"}
               </Button>
             </form>
           </Panel>
         </section>
+
+        <Panel title="Agendamentos arquivados" icon={CalendarDays}>
+          {archivedAppointments.length > 0 ? (
+            <div className="grid gap-3 md:grid-cols-2">
+              {archivedAppointments.map((appointment) => (
+                <div key={appointment.id} className="rounded-lg border border-border bg-background p-4">
+                  <p className="font-semibold text-foreground">{appointment.petNome}</p>
+                  <p className="text-sm text-muted-foreground">Tutor: {appointment.tutorDisplayName}</p>
+                  <p className="text-sm text-muted-foreground">Veterinário: {appointment.veterinarianDisplayName}</p>
+                  <p className="text-sm text-muted-foreground">Data: {appointment.data}</p>
+                  <p className="text-sm text-muted-foreground">Horário: {appointment.horarioInicio}-{appointment.horarioFim}</p>
+                  <p className="text-sm text-muted-foreground">Tipo: {appointment.tipo}</p>
+                  <p className="text-sm text-muted-foreground">Status: {statusLabel(appointment.status)}</p>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Retorno Médico: {appointment.consultation?.motivo || "não registrado"}
+                  </p>
+                  <Button type="button" variant="outline" size="sm" className="mt-3" onClick={() => handleRestoreAppointment(appointment.id)}>
+                    Restaurar
+                  </Button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState text="Nenhum agendamento arquivado." />
+          )}
+        </Panel>
 
         <Panel title="Registrar vacina" icon={Syringe}>
           <form onSubmit={handleCreateVaccine} className="grid gap-4 md:grid-cols-[1.2fr_1fr_1fr_1fr_auto] md:items-end">

@@ -3,7 +3,7 @@ import type { ApprovalStatus, UserRole } from "@/lib/auth-routes"
 
 type SupabaseBrowserClient = ReturnType<typeof createClient>
 
-export type Especie = "cao" | "gato" | "outro"
+export type Especie = "cao" | "gato" | "aves" | "roedores" | "coelhos" | "outro"
 export type AgendamentoStatus = "agendado" | "confirmado" | "realizado" | "cancelado"
 export type AppointmentStatus = AgendamentoStatus
 export type ConsultaStatus = "agendada" | "realizada" | "cancelada"
@@ -43,6 +43,7 @@ interface AgendamentoRow {
   status?: AgendamentoStatus | null
   veterinario_id?: string | null
   tutor_archived_at?: string | null
+  veterinario_archived_at?: string | null
   preco_estimado?: number | null
   created_at: string
 }
@@ -194,6 +195,7 @@ export interface AdminAppointment {
   tipo: string
   status: AgendamentoStatus
   tutorArchivedAt: string | null
+  veterinarianArchivedAt: string | null
   precoEstimado: number | null
   createdAt: string
 }
@@ -274,6 +276,7 @@ export interface TutorConsultationFeedback {
   feedback: string
   appointmentDate: string | null
   appointmentStartTime: string | null
+  agendamentoId: string | null
   valor: number | null
 }
 
@@ -421,6 +424,7 @@ function mapAppointment(
     tipo: row.tipo,
     status: row.status || "agendado",
     tutorArchivedAt: row.tutor_archived_at || null,
+    veterinarianArchivedAt: row.veterinario_archived_at || null,
     precoEstimado: row.preco_estimado == null ? null : Number(row.preco_estimado),
     createdAt: row.created_at,
   }
@@ -774,7 +778,7 @@ export async function getPetsForVeterinarianWorkflow(
     .order("horario_inicio", { ascending: true })
 
   if (veterinarianId) {
-    query = query.or(`veterinario_id.is.null,veterinario_id.eq.${veterinarianId}`)
+    query = query.eq("veterinario_id", veterinarianId)
   }
 
   const { data, error } = await query
@@ -969,13 +973,41 @@ export async function getVeterinarianAppointments(client: SupabaseBrowserClient,
     .order("horario_inicio", { ascending: true })
 
   if (veterinarianId) {
-    query = query.or(`veterinario_id.is.null,veterinario_id.eq.${veterinarianId}`)
+    query = query.eq("veterinario_id", veterinarianId)
   }
 
   const { data, error } = await query
   if (error) throw clinicDataError(error)
 
   return getAppointmentDetailsFromRows(client, (data || []) as AgendamentoRow[])
+}
+
+export async function archiveVeterinarianAppointment(
+  client: SupabaseBrowserClient,
+  appointmentId: string,
+  veterinarianId: string,
+) {
+  const { error } = await client
+    .from("agendamentos")
+    .update({ veterinario_archived_at: new Date().toISOString() })
+    .eq("id", appointmentId)
+    .eq("veterinario_id", veterinarianId)
+
+  if (error) throw clinicDataError(error)
+}
+
+export async function restoreVeterinarianAppointment(
+  client: SupabaseBrowserClient,
+  appointmentId: string,
+  veterinarianId: string,
+) {
+  const { error } = await client
+    .from("agendamentos")
+    .update({ veterinario_archived_at: null })
+    .eq("id", appointmentId)
+    .eq("veterinario_id", veterinarianId)
+
+  if (error) throw clinicDataError(error)
 }
 
 export async function getAppointmentDetails(client: SupabaseBrowserClient, appointmentId: string) {
@@ -1108,6 +1140,7 @@ export async function getTutorConsultationFeedback(
       feedback: consultation.motivo,
       appointmentDate: appointment?.data || null,
       appointmentStartTime: appointment?.horario_inicio || null,
+      agendamentoId: consultation.agendamento_id || null,
       valor: consultation.valor == null ? null : Number(consultation.valor),
     }
   })

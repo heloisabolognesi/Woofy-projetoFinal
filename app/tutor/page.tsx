@@ -36,7 +36,7 @@ import {
   type VeterinarianOption,
 } from "@/lib/clinic-data"
 
-type Especie = "cao" | "gato" | "outro"
+type Especie = "cao" | "gato" | "aves" | "roedores" | "coelhos" | "outro"
 
 interface PetRow {
   id: string
@@ -73,6 +73,18 @@ function addOneHour(time: string) {
   const [hours, minutes] = time.split(":").map(Number)
   if (Number.isNaN(hours) || Number.isNaN(minutes)) return time
   return `${String((hours + 1) % 24).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`
+}
+
+function speciesLabel(especie: Especie) {
+  const labels: Record<Especie, string> = {
+    cao: "Cão",
+    gato: "Gato",
+    aves: "Aves",
+    roedores: "Roedores",
+    coelhos: "Coelhos",
+    outro: "Outro",
+  }
+  return labels[especie] || especie
 }
 
 function readableError(error: unknown) {
@@ -181,6 +193,34 @@ export default function TutorPage() {
   }, [pets])
   const activeAppointments = agendamentos.filter((appointment) => !appointment.tutorArchivedAt)
   const archivedAppointments = agendamentos.filter((appointment) => appointment.tutorArchivedAt)
+  const medicalReturns = useMemo(() => {
+    const feedbackAppointmentIds = new Set(feedbacks.map((feedback) => feedback.agendamentoId).filter(Boolean))
+    const feedbackConsultationIds = new Set(feedbacks.map((feedback) => feedback.id))
+    const feedbackItems = feedbacks.map((item) => ({
+      id: `feedback-${item.id}`,
+      petNome: item.petNome,
+      veterinarianDisplayName: item.veterinarianDisplayName,
+      data: item.data,
+      tipo: "Consulta",
+      text: item.feedback,
+    }))
+    const historyOnlyItems = historico
+      .filter((item) => {
+        if (item.agendamentoId && feedbackAppointmentIds.has(item.agendamentoId)) return false
+        if (item.consultaId && feedbackConsultationIds.has(item.consultaId)) return false
+        return true
+      })
+      .map((item) => ({
+        id: `history-${item.id}`,
+        petNome: item.petNome,
+        veterinarianDisplayName: item.veterinarianDisplayName,
+        data: item.data,
+        tipo: item.tipo,
+        text: item.descricao,
+      }))
+
+    return [...feedbackItems, ...historyOnlyItems].sort((a, b) => b.data.localeCompare(a.data))
+  }, [feedbacks, historico])
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value)
 
@@ -336,7 +376,7 @@ export default function TutorPage() {
           <SummaryCard icon={PawPrint} label="Meus Pets" value={pets.length} />
           <SummaryCard icon={CalendarDays} label="Meus Agendamentos" value={activeAppointments.length} />
           <SummaryCard icon={Syringe} label="Vacinas" value={vacinas.length} />
-          <SummaryCard icon={ClipboardList} label="Registros Clínicos" value={feedbacks.length + historico.length} />
+          <SummaryCard icon={ClipboardList} label="Retorno Médico" value={medicalReturns.length} />
         </section>
 
         <section className="grid gap-6 lg:grid-cols-[1fr_420px]">
@@ -347,10 +387,10 @@ export default function TutorPage() {
                   <div key={pet.id} className="rounded-lg border border-border bg-background p-4">
                     <h3 className="font-semibold text-foreground">{pet.nome}</h3>
                     <p className="text-sm text-muted-foreground">
-                      {pet.raca} - {pet.especie === "cao" ? "Cão" : pet.especie === "gato" ? "Gato" : "Outro"}
+                      {pet.raca} - {speciesLabel(pet.especie)}
                     </p>
                     <p className="mt-2 text-sm text-muted-foreground">
-                      {pet.peso ? `${pet.peso} kg` : "Peso não informado"}
+                    {pet.peso ? `${pet.peso} kg` : "Peso não informado"}
                     </p>
                   </div>
                 ))}
@@ -374,7 +414,9 @@ export default function TutorPage() {
                   >
                     <option value="cao">Cão</option>
                     <option value="gato">Gato</option>
-                    <option value="outro">Outro</option>
+                    <option value="aves">Aves</option>
+                    <option value="roedores">Roedores</option>
+                    <option value="coelhos">Coelhos</option>
                   </select>
                 </div>
                 <Field label="Raça" value={petForm.raca} onChange={(value) => setPetForm({ ...petForm, raca: value })} required />
@@ -408,7 +450,7 @@ export default function TutorPage() {
                         </p>
                         <p className="text-sm text-muted-foreground">{agendamento.veterinarianDisplayName}</p>
                         {agendamento.precoEstimado != null && (
-                          <p className="text-sm text-muted-foreground">Estimativa: {formatCurrency(agendamento.precoEstimado)}</p>
+                          <p className="text-sm text-muted-foreground">Valor a pagar: {formatCurrency(agendamento.precoEstimado)}</p>
                         )}
                       </div>
                       <Button
@@ -466,7 +508,19 @@ export default function TutorPage() {
                   ))}
                 </select>
               </div>
-              <Field label="Tipo" value={appointmentForm.tipo} onChange={(value) => setAppointmentForm({ ...appointmentForm, tipo: value })} required />
+              <div className="space-y-2">
+                <Label htmlFor="appointmentType">Tipo</Label>
+                <select
+                  id="appointmentType"
+                  required
+                  value={appointmentForm.tipo}
+                  onChange={(event) => setAppointmentForm({ ...appointmentForm, tipo: event.target.value })}
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="Consulta">Consulta</option>
+                  <option value="Vacinas">Vacinas</option>
+                </select>
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="observacoes">Observações</Label>
                 <Textarea
@@ -543,37 +597,19 @@ export default function TutorPage() {
             )}
           </Panel>
 
-          <Panel title="Feedbacks das consultas" icon={ClipboardList}>
-            {feedbacks.length > 0 ? (
+          <Panel title="Retorno Médico" icon={ClipboardList}>
+            {medicalReturns.length > 0 ? (
               <div className="space-y-3">
-                {feedbacks.map((item) => (
+                {medicalReturns.map((item) => (
                   <InfoRow
                     key={item.id}
-                    title={`${item.petNome} - Feedback da consulta`}
-                    subtitle={`${item.data}: ${item.feedback} (${item.veterinarianDisplayName})`}
+                    title={`${item.petNome} - ${item.tipo}`}
+                    subtitle={`${item.data}: ${item.text} (${item.veterinarianDisplayName})`}
                   />
                 ))}
               </div>
             ) : (
-              <EmptyState text="Nenhum feedback de consulta registrado." />
-            )}
-          </Panel>
-        </section>
-
-        <section className="grid gap-6 lg:grid-cols-2">
-          <Panel title="Histórico dos meus Pets" icon={ClipboardList}>
-            {historico.length > 0 ? (
-              <div className="space-y-3">
-                {historico.map((item) => (
-                  <InfoRow
-                    key={item.id}
-                    title={`${item.petNome} - Histórico clínico (${item.tipo})`}
-                    subtitle={`${item.data}: ${item.descricao} (${item.veterinarianDisplayName})`}
-                  />
-                ))}
-              </div>
-            ) : (
-              <EmptyState text="Nenhum histórico clínico registrado." />
+              <EmptyState text="Nenhum retorno médico registrado." />
             )}
           </Panel>
         </section>

@@ -30,15 +30,21 @@ import {
 } from "@/lib/clinic-data"
 import { createClient } from "@/lib/supabase"
 
-const especieIcons = {
+const especieIcons: Record<Especie, typeof Dog> = {
   cao: Dog,
   gato: Cat,
+  aves: PawPrint,
+  roedores: Rabbit,
+  coelhos: Rabbit,
   outro: Rabbit,
 }
 
-const especieLabels = {
+const especieLabels: Record<Especie, string> = {
   cao: "Cão",
   gato: "Gato",
+  aves: "Aves",
+  roedores: "Roedores",
+  coelhos: "Coelhos",
   outro: "Outro",
 }
 
@@ -241,7 +247,9 @@ function PetModal({
             >
               <option value="cao">Cão</option>
               <option value="gato">Gato</option>
-              <option value="outro">Outro</option>
+              <option value="aves">Aves</option>
+              <option value="roedores">Roedores</option>
+              <option value="coelhos">Coelhos</option>
             </select>
           </div>
 
@@ -480,7 +488,9 @@ export default function PetsPage() {
           <option value="todos">Todas as espécies</option>
           <option value="cao">Cães</option>
           <option value="gato">Gatos</option>
-          <option value="outro">Outros</option>
+          <option value="aves">Aves</option>
+          <option value="roedores">Roedores</option>
+          <option value="coelhos">Coelhos</option>
         </select>
       </div>
 
