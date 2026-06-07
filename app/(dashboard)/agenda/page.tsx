@@ -29,15 +29,16 @@ import {
   createAdminAppointment,
   getAdminAppointments,
   getAdminPets,
-  getClinicProfiles,
+  getApprovedVeterinarians,
   updateAppointmentStatus,
   type AdminAppointment,
   type AdminPet,
   type AgendamentoStatus,
-  type ProfileSummary,
+  type VeterinarianOption,
 } from "@/lib/clinic-data"
 
 const colorClasses = ["bg-primary", "bg-secondary", "bg-woofy-gold", "bg-woofy-accent"]
+const unassignedVeterinarianValue = "__unassigned"
 
 function getWeekDays(startDate: Date): Date[] {
   const days: Date[] = []
@@ -77,7 +78,7 @@ export default function AgendaPage() {
   const [selectedAgendamento, setSelectedAgendamento] = useState<AdminAppointment | null>(null)
   const [agendamentos, setAgendamentos] = useState<AdminAppointment[]>([])
   const [pets, setPets] = useState<AdminPet[]>([])
-  const [profiles, setProfiles] = useState<ProfileSummary[]>([])
+  const [veterinarios, setVeterinarios] = useState<VeterinarianOption[]>([])
   const [isLoadingData, setIsLoadingData] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [formData, setFormData] = useState<FormData>({
@@ -89,14 +90,9 @@ export default function AgendaPage() {
     tipo: "",
   })
 
-  const veterinarios = useMemo(
-    () => profiles.filter((profile) => profile.role === "veterinario"),
-    [profiles],
-  )
-
   const vetColors = useMemo(() => {
     return veterinarios.reduce<Record<string, string>>((acc, vet, index) => {
-      acc[vet.fullName || vet.id] = colorClasses[index % colorClasses.length]
+      acc[vet.full_name || vet.id] = colorClasses[index % colorClasses.length]
       return acc
     }, {})
   }, [veterinarios])
@@ -127,14 +123,14 @@ export default function AgendaPage() {
       await refreshProfile(user.id)
 
       try {
-        const [appointmentsResult, petsResult, profilesResult] = await Promise.all([
+        const [appointmentsResult, petsResult, veterinariansResult] = await Promise.all([
           getAdminAppointments(supabase),
           getAdminPets(supabase),
-          getClinicProfiles(supabase),
+          getApprovedVeterinarians(supabase),
         ])
         setAgendamentos(appointmentsResult)
         setPets(petsResult)
-        setProfiles(profilesResult)
+        setVeterinarios(veterinariansResult)
       } catch {
         addToast("Não foi possível carregar a agenda real do Supabase.", "error")
       } finally {
@@ -167,7 +163,7 @@ export default function AgendaPage() {
         data: formData.data,
         horarioInicio: formData.horarioInicio,
         horarioFim: formData.horarioFim,
-        veterinario: selectedVet?.fullName || "A definir",
+        veterinario: selectedVet?.full_name || "A definir",
         veterinarioId: selectedVet?.id || null,
         tipo: formData.tipo,
       })
@@ -204,8 +200,10 @@ export default function AgendaPage() {
   }
 
   const handleVeterinarianChange = async (appointment: AdminAppointment, veterinarianId: string) => {
-    const selectedVet = veterinarios.find((vet) => vet.id === veterinarianId)
-    const veterinarianName = selectedVet?.fullName || "A definir"
+    const selectedVet = veterinarianId === unassignedVeterinarianValue
+      ? null
+      : veterinarios.find((vet) => vet.id === veterinarianId) || null
+    const veterinarianName = selectedVet?.full_name || "A definir"
 
     try {
       await assignVeterinarianToAppointment(supabase, appointment.id, selectedVet?.id || null, veterinarianName)
@@ -342,7 +340,7 @@ export default function AgendaPage() {
                   <SelectContent>
                     {veterinarios.map((vet) => (
                       <SelectItem key={vet.id} value={vet.id}>
-                        {vet.fullName || "Veterinário sem nome"}
+                        {vet.full_name || "Veterinário sem nome"} - {vet.crmv}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -390,11 +388,11 @@ export default function AgendaPage() {
 
       <div className="flex flex-wrap gap-3">
         {veterinarios.map((vet) => {
-          const vetName = vet.fullName || vet.id
+          const vetName = vet.full_name || vet.id
           return (
             <div key={vet.id} className="flex items-center gap-2">
               <div className={cn("h-3 w-3 rounded-full", vetColors[vetName] || "bg-primary")} />
-              <span className="text-sm text-muted-foreground">{vet.fullName || "Veterinário sem nome"}</span>
+              <span className="text-sm text-muted-foreground">{vet.full_name || "Veterinário sem nome"} - {vet.crmv}</span>
             </div>
           )
         })}
@@ -538,16 +536,17 @@ export default function AgendaPage() {
                   <div className="space-y-2">
                     <Label>Veterinário</Label>
                     <Select
-                      value={selectedAgendamento.veterinarioId || ""}
+                      value={selectedAgendamento.veterinarioId || unassignedVeterinarianValue}
                       onValueChange={(value) => handleVeterinarianChange(selectedAgendamento, value)}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder={selectedAgendamento.veterinario || "A definir"} />
                       </SelectTrigger>
                       <SelectContent>
+                        <SelectItem value={unassignedVeterinarianValue}>A definir</SelectItem>
                         {veterinarios.map((vet) => (
                           <SelectItem key={vet.id} value={vet.id}>
-                            {vet.fullName || "Veterinário sem nome"}
+                            {vet.full_name || "Veterinário sem nome"} - {vet.crmv}
                           </SelectItem>
                         ))}
                       </SelectContent>

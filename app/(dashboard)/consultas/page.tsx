@@ -70,6 +70,10 @@ export default function ConsultasPage() {
     const date = new Date(`${dateStr}T00:00:00`)
     return date.toLocaleDateString("pt-BR")
   }
+  const formatCurrency = (value: number | null) => {
+    if (value == null) return "Não definido"
+    return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value)
+  }
 
   if (loading || isLoadingData) {
     return (
@@ -135,6 +139,9 @@ export default function ConsultasPage() {
                   <th className="text-left px-4 py-3 text-sm font-semibold text-card-foreground hidden lg:table-cell">
                     Feedback
                   </th>
+                  <th className="text-left px-4 py-3 text-sm font-semibold text-card-foreground hidden lg:table-cell">
+                    Valor
+                  </th>
                   <th className="text-left px-4 py-3 text-sm font-semibold text-card-foreground">Status</th>
                 </tr>
               </thead>
@@ -164,6 +171,9 @@ export default function ConsultasPage() {
                     </td>
                     <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell max-w-[260px] truncate">
                       {consulta.motivo}
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell">
+                      {formatCurrency(consulta.valor)}
                     </td>
                     <td className="px-4 py-3">
                       <span className={cn("px-3 py-1 rounded-full text-xs font-medium", statusColors[consulta.status])}>

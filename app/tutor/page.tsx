@@ -19,7 +19,22 @@ import { Textarea } from "@/components/ui/textarea"
 import { useAuth } from "@/context/auth-context"
 import { useApp } from "@/context/app-context"
 import { createClient } from "@/lib/supabase"
-import { createTutorAppointment } from "@/lib/clinic-data"
+import {
+  archiveTutorAppointment,
+  createTutorAppointment,
+  getApprovedVeterinarians,
+  getTutorAppointments,
+  getTutorConsultationFeedback,
+  getTutorFinancialSummary,
+  getTutorPetHistory,
+  getTutorVaccines,
+  restoreTutorAppointment,
+  type AdminHistoryEntry,
+  type AdminVaccine,
+  type ClinicAppointment,
+  type TutorConsultationFeedback,
+  type VeterinarianOption,
+} from "@/lib/clinic-data"
 
 type Especie = "cao" | "gato" | "outro"
 
@@ -36,35 +51,6 @@ interface PetRow {
   arquivado: boolean
 }
 
-interface AgendamentoRow {
-  id: string
-  pet_id: string
-  user_id: string
-  tutor: string
-  data: string
-  horario_inicio: string
-  horario_fim: string
-  veterinario: string
-  tipo: string
-}
-
-interface VacinaRow {
-  id: string
-  pet_id: string
-  vacina: string
-  data_aplicacao: string
-  proxima_dose: string | null
-}
-
-interface HistoricoRow {
-  id: string
-  pet_id: string
-  data: string
-  tipo: "consulta" | "vacina" | "exame"
-  descricao: string
-  veterinario: string
-}
-
 const initialPetForm = {
   nome: "",
   especie: "cao" as Especie,
@@ -78,7 +64,7 @@ const initialAppointmentForm = {
   pet_id: "",
   data: "",
   horario_inicio: "",
-  veterinario: "A definir",
+  veterinario_id: "",
   tipo: "Consulta",
   observacoes: "",
 }
@@ -89,15 +75,24 @@ function addOneHour(time: string) {
   return `${String((hours + 1) % 24).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`
 }
 
+function readableError(error: unknown) {
+  if (error instanceof Error) return error.message
+  if (typeof error === "object" && error !== null) return JSON.stringify(error)
+  return String(error)
+}
+
 export default function TutorPage() {
   const { user, profile, loading, signOut } = useAuth()
   const { addToast } = useApp()
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
   const [pets, setPets] = useState<PetRow[]>([])
-  const [agendamentos, setAgendamentos] = useState<AgendamentoRow[]>([])
-  const [vacinas, setVacinas] = useState<VacinaRow[]>([])
-  const [historico, setHistorico] = useState<HistoricoRow[]>([])
+  const [agendamentos, setAgendamentos] = useState<ClinicAppointment[]>([])
+  const [veterinarians, setVeterinarians] = useState<VeterinarianOption[]>([])
+  const [vacinas, setVacinas] = useState<AdminVaccine[]>([])
+  const [feedbacks, setFeedbacks] = useState<TutorConsultationFeedback[]>([])
+  const [historico, setHistorico] = useState<AdminHistoryEntry[]>([])
+  const [financialSummary, setFinancialSummary] = useState({ consultationTotal: 0, vaccineTotal: 0, total: 0 })
   const [petForm, setPetForm] = useState(initialPetForm)
   const [appointmentForm, setAppointmentForm] = useState(initialAppointmentForm)
   const [isLoadingData, setIsLoadingData] = useState(true)
@@ -117,22 +112,62 @@ export default function TutorPage() {
       if (!user) return
       setIsLoadingData(true)
 
-      const [petsResult, agendamentosResult, vacinasResult, historicoResult] = await Promise.all([
-        supabase.from("pets").select("*").eq("user_id", user.id).eq("arquivado", false).order("created_at", { ascending: false }),
-        supabase.from("agendamentos").select("*").eq("user_id", user.id).order("data", { ascending: true }),
-        supabase.from("vacinas").select("*").eq("user_id", user.id).order("proxima_dose", { ascending: true }),
-        supabase.from("historico").select("*").eq("user_id", user.id).order("data", { ascending: false }),
-      ])
+      try {
+        const [
+          petsResult,
+          agendamentosResult,
+          vacinasResult,
+          feedbacksResult,
+          historicoResult,
+          financialSummaryResult,
+          veterinariansResult,
+        ] = await Promise.allSettled([
+          supabase.from("pets").select("*").eq("user_id", user.id).eq("arquivado", false).order("created_at", { ascending: false }),
+          getTutorAppointments(supabase, user.id),
+          getTutorVaccines(supabase, user.id),
+          getTutorConsultationFeedback(supabase, user.id),
+          getTutorPetHistory(supabase, user.id),
+          getTutorFinancialSummary(supabase, user.id),
+          getApprovedVeterinarians(supabase),
+        ])
 
-      if (petsResult.error || agendamentosResult.error || vacinasResult.error || historicoResult.error) {
-        addToast("Não foi possível carregar todos os dados do tutor.", "error")
+        const loadErrors = [
+          petsResult.status === "fulfilled" && petsResult.value.error ? petsResult.value.error : null,
+          agendamentosResult.status === "rejected" ? agendamentosResult.reason : null,
+          vacinasResult.status === "rejected" ? vacinasResult.reason : null,
+          feedbacksResult.status === "rejected" ? feedbacksResult.reason : null,
+          historicoResult.status === "rejected" ? historicoResult.reason : null,
+          financialSummaryResult.status === "rejected" ? financialSummaryResult.reason : null,
+          veterinariansResult.status === "rejected" ? veterinariansResult.reason : null,
+        ].filter(Boolean)
+
+        if (loadErrors.length > 0) {
+          console.error("Tutor load failed:", loadErrors.map(readableError).join(" | "))
+          addToast("Não foi possível carregar todos os dados do tutor.", "error")
+        }
+
+        setPets(petsResult.status === "fulfilled" ? ((petsResult.value.data || []) as PetRow[]) : [])
+        setAgendamentos(agendamentosResult.status === "fulfilled" ? agendamentosResult.value : [])
+        setVacinas(vacinasResult.status === "fulfilled" ? vacinasResult.value : [])
+        setFeedbacks(feedbacksResult.status === "fulfilled" ? feedbacksResult.value : [])
+        setHistorico(historicoResult.status === "fulfilled" ? historicoResult.value : [])
+        setFinancialSummary(
+          financialSummaryResult.status === "fulfilled"
+            ? financialSummaryResult.value
+            : { consultationTotal: 0, vaccineTotal: 0, total: 0 }
+        )
+        const loadedVeterinarians = veterinariansResult.status === "fulfilled" ? veterinariansResult.value : []
+        setVeterinarians(loadedVeterinarians)
+        setAppointmentForm((current) => ({
+          ...current,
+          veterinario_id: current.veterinario_id || loadedVeterinarians[0]?.id || "",
+        }))
+      } catch (error) {
+        console.error("Tutor load failed:", readableError(error))
+        addToast("Não foi possível carregar os dados do tutor.", "error")
+      } finally {
+        setIsLoadingData(false)
       }
-
-      setPets((petsResult.data || []) as PetRow[])
-      setAgendamentos((agendamentosResult.data || []) as AgendamentoRow[])
-      setVacinas((vacinasResult.data || []) as VacinaRow[])
-      setHistorico((historicoResult.data || []) as HistoricoRow[])
-      setIsLoadingData(false)
     }
 
     loadTutorData()
@@ -144,6 +179,10 @@ export default function TutorPage() {
       return acc
     }, {})
   }, [pets])
+  const activeAppointments = agendamentos.filter((appointment) => !appointment.tutorArchivedAt)
+  const archivedAppointments = agendamentos.filter((appointment) => appointment.tutorArchivedAt)
+  const formatCurrency = (value: number) =>
+    new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value)
 
   async function handleSignOut() {
     await signOut()
@@ -192,6 +231,12 @@ export default function TutorPage() {
       return
     }
 
+    const selectedVeterinarian = veterinarians.find((vet) => vet.id === appointmentForm.veterinario_id) || null
+    if (!selectedVeterinarian) {
+      addToast("Escolha o veterinário para o atendimento.", "error")
+      return
+    }
+
     setIsSavingAppointment(true)
     try {
       const data = await createTutorAppointment(supabase, {
@@ -201,7 +246,8 @@ export default function TutorPage() {
         data: appointmentForm.data,
         horarioInicio: appointmentForm.horario_inicio,
         horarioFim: addOneHour(appointmentForm.horario_inicio),
-        veterinario: appointmentForm.veterinario,
+        veterinario: selectedVeterinarian.full_name || "Veterinário",
+        veterinarioId: selectedVeterinarian.id,
         tipo: appointmentForm.observacoes
           ? `${appointmentForm.tipo} - ${appointmentForm.observacoes.trim()}`
           : appointmentForm.tipo,
@@ -209,17 +255,7 @@ export default function TutorPage() {
 
       setAgendamentos((current) => [
         ...current,
-        {
-          id: data.id,
-          pet_id: data.petId,
-          user_id: data.userId,
-          tutor: data.tutor,
-          data: data.data,
-          horario_inicio: data.horarioInicio,
-          horario_fim: data.horarioFim,
-          veterinario: data.veterinario,
-          tipo: data.tipo,
-        },
+        data,
       ])
       setAppointmentForm(initialAppointmentForm)
       addToast("Agendamento solicitado com sucesso!")
@@ -227,6 +263,39 @@ export default function TutorPage() {
       addToast("Erro ao criar agendamento.", "error")
     } finally {
       setIsSavingAppointment(false)
+    }
+  }
+
+  async function handleArchiveAppointment(appointmentId: string) {
+    if (!user) return
+
+    try {
+      await archiveTutorAppointment(supabase, appointmentId, user.id)
+      const archivedAt = new Date().toISOString()
+      setAgendamentos((current) =>
+        current.map((appointment) =>
+          appointment.id === appointmentId ? { ...appointment, tutorArchivedAt: archivedAt } : appointment
+        )
+      )
+      addToast("Agendamento arquivado.")
+    } catch {
+      addToast("Não foi possível arquivar o agendamento.", "error")
+    }
+  }
+
+  async function handleRestoreAppointment(appointmentId: string) {
+    if (!user) return
+
+    try {
+      await restoreTutorAppointment(supabase, appointmentId, user.id)
+      setAgendamentos((current) =>
+        current.map((appointment) =>
+          appointment.id === appointmentId ? { ...appointment, tutorArchivedAt: null } : appointment
+        )
+      )
+      addToast("Agendamento restaurado.")
+    } catch {
+      addToast("Não foi possível restaurar o agendamento.", "error")
     }
   }
 
@@ -265,9 +334,9 @@ export default function TutorPage() {
 
         <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <SummaryCard icon={PawPrint} label="Meus Pets" value={pets.length} />
-          <SummaryCard icon={CalendarDays} label="Meus Agendamentos" value={agendamentos.length} />
+          <SummaryCard icon={CalendarDays} label="Meus Agendamentos" value={activeAppointments.length} />
           <SummaryCard icon={Syringe} label="Vacinas" value={vacinas.length} />
-          <SummaryCard icon={ClipboardList} label="Histórico do Pet" value={historico.length} />
+          <SummaryCard icon={ClipboardList} label="Registros Clínicos" value={feedbacks.length + historico.length} />
         </section>
 
         <section className="grid gap-6 lg:grid-cols-[1fr_420px]">
@@ -325,17 +394,32 @@ export default function TutorPage() {
 
         <section className="grid gap-6 lg:grid-cols-2">
           <Panel title="Meus Agendamentos" icon={CalendarDays}>
-            {agendamentos.length > 0 ? (
+            {activeAppointments.length > 0 ? (
               <div className="space-y-3">
-                {agendamentos.map((agendamento) => (
+                {activeAppointments.map((agendamento) => (
                   <div key={agendamento.id} className="rounded-lg border border-border bg-background p-4">
-                    <p className="font-semibold text-foreground">
-                      {petNameById[agendamento.pet_id] || "Pet"} - {agendamento.tipo}
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      {agendamento.data} as {agendamento.horario_inicio}
-                    </p>
-                    <p className="text-sm text-muted-foreground">{agendamento.veterinario}</p>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-foreground">
+                          {agendamento.petNome} - {agendamento.tipo}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          {agendamento.data} as {agendamento.horarioInicio}
+                        </p>
+                        <p className="text-sm text-muted-foreground">{agendamento.veterinarianDisplayName}</p>
+                        {agendamento.precoEstimado != null && (
+                          <p className="text-sm text-muted-foreground">Estimativa: {formatCurrency(agendamento.precoEstimado)}</p>
+                        )}
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleArchiveAppointment(agendamento.id)}
+                      >
+                        Arquivar
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -365,6 +449,23 @@ export default function TutorPage() {
                 <Field label="Data" type="date" value={appointmentForm.data} onChange={(value) => setAppointmentForm({ ...appointmentForm, data: value })} required />
                 <Field label="Horário" type="time" value={appointmentForm.horario_inicio} onChange={(value) => setAppointmentForm({ ...appointmentForm, horario_inicio: value })} required />
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="veterinario">Veterinário</Label>
+                <select
+                  id="veterinario"
+                  required
+                  value={appointmentForm.veterinario_id}
+                  onChange={(event) => setAppointmentForm({ ...appointmentForm, veterinario_id: event.target.value })}
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="">Selecione</option>
+                  {veterinarians.map((vet) => (
+                    <option key={vet.id} value={vet.id}>
+                      {vet.full_name || "Veterinário sem nome"} - {vet.crmv}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <Field label="Tipo" value={appointmentForm.tipo} onChange={(value) => setAppointmentForm({ ...appointmentForm, tipo: value })} required />
               <div className="space-y-2">
                 <Label htmlFor="observacoes">Observações</Label>
@@ -375,7 +476,7 @@ export default function TutorPage() {
                   className="min-h-20"
                 />
               </div>
-              <Button type="submit" disabled={isSavingAppointment || pets.length === 0} className="w-full gap-2">
+              <Button type="submit" disabled={isSavingAppointment || pets.length === 0 || veterinarians.length === 0} className="w-full gap-2">
                 {isSavingAppointment && <Loader2 className="h-4 w-4 animate-spin" />}
                 Solicitar agendamento
               </Button>
@@ -384,11 +485,57 @@ export default function TutorPage() {
         </section>
 
         <section className="grid gap-6 lg:grid-cols-2">
+          <Panel title="Resumo financeiro" icon={ClipboardList}>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <InfoRow title="Consultas" subtitle={formatCurrency(financialSummary.consultationTotal)} />
+              <InfoRow title="Vacinas" subtitle={formatCurrency(financialSummary.vaccineTotal)} />
+              <InfoRow title="Total" subtitle={formatCurrency(financialSummary.total)} />
+            </div>
+          </Panel>
+
+          <Panel title="Agendamentos arquivados" icon={CalendarDays}>
+            {archivedAppointments.length > 0 ? (
+              <div className="space-y-3">
+                {archivedAppointments.map((agendamento) => (
+                  <div key={agendamento.id} className="rounded-lg border border-border bg-background p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-foreground">
+                          {agendamento.petNome} - {agendamento.tipo}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          {agendamento.data} as {agendamento.horarioInicio}
+                        </p>
+                        <p className="text-sm text-muted-foreground">{agendamento.veterinarianDisplayName}</p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleRestoreAppointment(agendamento.id)}
+                      >
+                        Restaurar
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <EmptyState text="Nenhum agendamento arquivado." />
+            )}
+          </Panel>
+        </section>
+
+        <section className="grid gap-6 lg:grid-cols-2">
           <Panel title="Vacinas dos meus Pets" icon={Syringe}>
             {vacinas.length > 0 ? (
               <div className="space-y-3">
                 {vacinas.map((vacina) => (
-                  <InfoRow key={vacina.id} title={vacina.vacina} subtitle={`${petNameById[vacina.pet_id] || "Pet"} - próxima dose: ${vacina.proxima_dose || "não definida"}`} />
+                  <InfoRow
+                    key={vacina.id}
+                    title={vacina.vacina}
+                    subtitle={`${vacina.petNome || "Pet"} - próxima dose: ${vacina.proximaDose || "não definida"}`}
+                  />
                 ))}
               </div>
             ) : (
@@ -396,11 +543,33 @@ export default function TutorPage() {
             )}
           </Panel>
 
+          <Panel title="Feedbacks das consultas" icon={ClipboardList}>
+            {feedbacks.length > 0 ? (
+              <div className="space-y-3">
+                {feedbacks.map((item) => (
+                  <InfoRow
+                    key={item.id}
+                    title={`${item.petNome} - Feedback da consulta`}
+                    subtitle={`${item.data}: ${item.feedback} (${item.veterinarianDisplayName})`}
+                  />
+                ))}
+              </div>
+            ) : (
+              <EmptyState text="Nenhum feedback de consulta registrado." />
+            )}
+          </Panel>
+        </section>
+
+        <section className="grid gap-6 lg:grid-cols-2">
           <Panel title="Histórico dos meus Pets" icon={ClipboardList}>
             {historico.length > 0 ? (
               <div className="space-y-3">
                 {historico.map((item) => (
-                  <InfoRow key={item.id} title={`${petNameById[item.pet_id] || "Pet"} - ${item.tipo}`} subtitle={`${item.data}: ${item.descricao}`} />
+                  <InfoRow
+                    key={item.id}
+                    title={`${item.petNome} - Histórico clínico (${item.tipo})`}
+                    subtitle={`${item.data}: ${item.descricao} (${item.veterinarianDisplayName})`}
+                  />
                 ))}
               </div>
             ) : (
