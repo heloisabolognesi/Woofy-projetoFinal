@@ -1,3 +1,5 @@
+🐾 Woofy — Documentação Técnica
+
 # Sistema de Gestão para Clínicas Veterinárias
 
 ---
