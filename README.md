@@ -420,12 +420,3 @@ O **Woofy** é uma plataforma web de gestão inteligente voltada para **clínica
 
 ---
 
-## 🌿 Branches do Repositório
-
-| Branch | Descrição |
-| --- | --- |
-| `main` | Branch principal (README apenas) |
-| `Heloisa-Bolognesi` | Frontend |
-| `Guilherme-Lima` | Backend |
-
----
